@@ -7,7 +7,7 @@ description: "当用户需要查法律条文、做法律问答、核对法条原
 description_zh: "深知法律助手，面向遇到法律问题要弄明白、要把依据找扎实的人——劳动、合同、借贷、消费、公司股权、婚姻继承等日常纠纷中的个人，以及企业法务、HR、合规与业务人员。它不凭记忆答法条，而是把“这事适用哪部法、哪一条、现在是不是这个版本、金额怎么算”一路查到原文。\n\n能查：法律、行政法规、司法解释、部门规章与地方性法规的条文原文；既支持按条号精确取条文，也能按事实描述做条款级语义召回；涉及新旧法衔接时，按行为发生日或基准日选择当时有效的版本，并把版本差异说清楚。\n\n能算：经济补偿、未休年假、借款利息上限、赔偿金、诉讼时效等高频计算，逐项列公式、口径与假设，不把“大概”当结论；也能对合同条款、公司制度和合规依据做条文核对。\n\n能核：每个结论挂载条文原文与来源角标，点开可回看；交付前做事实有据、角标绑定、答案一致、时效确认、无未核验断言五项自检，并单独生成一份可逐条核对的溯源核验报告。\n\n交付：直接回答 + 一份含“正文、溯源核验报告、知识专库”三页的单文件 HTML，可导出 Markdown 与 PDF。当前覆盖中国大陆法律，港澳台及外国法不在范围；输出为研究性分析，不构成正式法律意见。\n\n由北京彩智科技有限公司旗下“深知可信智能”提供。"
 description_en: "dknowc legal assistant is a legal retrieval and verification Skill provided by dknowc Trusted Intelligence under Beijing Caizhi Technology Co., Ltd. It retrieves provision-level text through the trusted search API V2, falls back to full-text retrieval when version accuracy is required, and delivers a direct answer plus a single-file HTML provenance verification report. Hong Kong, Macao, Taiwan and foreign law are out of scope."
 category: "legal"
-version: "1.0.1"
+version: "1.0.2"
 author: 彩智科技
 permissions:
   network:
@@ -66,7 +66,7 @@ secrets:
 python3 {baseDir}/scripts/initialize.py
 ```
 
-只有 `ready=true`、`api_key_configured=true`、`api_key_source` 为 `environment` 或 `keyfile` 时才可检索。初始化默认做一次轻量检索校验；离线或只需快速检查时可加 `--no-verify-key`。未配置 Key 或校验失败时按 `{baseDir}/reference/onboarding_scripts.md` 引导开通；未开通前不得输出任何“已查到/已核实”的法律结论。
+只有 `ready=true`、`api_key_configured=true`、`api_key_source` 为 `environment` 或 `keyfile` 时才可检索。初始化默认做一次轻量检索校验（`policies/filter`，最多等 8 秒）；Key 返回 401/403 时阻断并引导重新开通；网络超时/5xx 时降级放行，但 `key_validated=false` 且提示“首次检索可能失败”。离线或只需快速检查时可加 `--no-verify-key`。未配置 Key 或校验失败时按 `{baseDir}/reference/onboarding_scripts.md` 引导开通；未开通前不得输出任何“已查到/已核实”的法律结论。
 
 ## 核心工作流
 
@@ -78,7 +78,7 @@ python3 {baseDir}/scripts/initialize.py
 4.5 **检索不足时降级（阶段二/三）**：V2（带标签/无标签）与法条模式都拿不到直接条文，或核心事实无直接支撑时，先用 `--search-channel webSearch` 走深知联网；仍不足再用宿主 WebSearch，原始结果经 `scripts/websearch_convert.py` 转为统一材料后 `merge_search_results.py` 合并。外部材料可参与回答与核验；内部标 `非官方来源=True`，报告用户可见标签为“外部公开材料 · 来源性质”；法条原文与司法解释仍优先使用深知原文。
 5. **材料画像**：合并后运行 `scripts/source_cards.py` 生成 `legal_source_cards.json`；`fetch_status=failed` 的材料不能当依据，外省材料不能回答本省问题。
 5.5 **整理研究资料**：在 `official-docs/search-results/legal_research_notes.md` 写核心事实表（结论｜法律/条号｜版本｜材料编号），把 0 条、标签异常、版本异常、接口失败一并记录。
-6. **先写结论台账，再写答案**：按 `{baseDir}/reference/answer-and-report.md` 先落盘 `legal_claims.json`，每个结论标 `direct / calculation / negative / inference / external / interpretation`，并挂 `source_ids`、`jurisdiction`、`as_of`；日期/利息先跑 `scripts/calc_period.py`。答案只能从台账里写，边写边标 `[n]`。
+6. **先写结论台账，再写答案**：按 `{baseDir}/reference/answer-and-report.md` 先落盘 `legal_claims.json`，每个结论标 `direct / calculation / negative / inference / external / interpretation`，并挂 `source_ids`、`jurisdiction`、`as_of`；日期/利息先跑 `scripts/calc_period.py`，纯算术（经济补偿年限折算、年假 300%、比例/倍数、封顶）先跑 `scripts/calc_legal.py`。答案只能从台账里写，边写边标 `[n]`。
 7. **结论图校验 + 自检 + 措辞检查**：先运行 `scripts/verify_claims.py --claims ... --sources ... --profile ... --answer ...`；`verdict` 非 `pass` 不得继续。再把 `fact_basis / binding / consistency / freshness / no_gap` 写入 `legal_selfcheck.json`，运行 `scripts/check_answer.py --claims ... --materials ...`。台账类问题不能靠 `absolute_review` 放行。
 7.5 **独立复核**：复杂题/含外部材料/含数量金额日期或分类判断的题，按 `{baseDir}/reference/verification-pass.md` 逐条核对 claim 与材料；独立复核不过，同样不得生成最终报告。
 8. **生成报告并交付**：`render_trace_html.py` 生成 HTML → `deliver_outputs.py` 交付到宿主工作区。

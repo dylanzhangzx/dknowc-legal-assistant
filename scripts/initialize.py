@@ -97,7 +97,8 @@ def _node_status() -> dict:
 def _verify_key() -> tuple:
     try:
         from legal_client import filter_policies
-        filter_policies("中华人民共和国劳动合同法", limit=1)
+        # 初始化校验必须“轻量”：最多等 8 秒，避免网络黑洞把每次会话启动拖到 60 秒。
+        filter_policies("中华人民共和国劳动合同法", limit=1, timeout=8)
         return True, None, None
     except Exception as exc:
         status = getattr(exc, "status_code", None)

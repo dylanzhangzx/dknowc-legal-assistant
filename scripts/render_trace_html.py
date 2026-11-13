@@ -438,17 +438,14 @@ def source_from_article(item: Dict[str, Any], index: int, segment: Optional[Dict
             vo.get("title"),
             "未命名来源文章",
         ),
+        # 来源卡只展示发布/实施机关（2026-11-13 统一口径）：不回退 unit/sourceElement/
+        # 数据源/来源/站点名，没有该字段就留空。数据源是抓取站点，不是发文机关。
         "agency": first_str(
-            item.get("unit") if not isinstance(item.get("unit"), list) else "、".join(str(x) for x in item.get("unit")[:3]),
-            item.get("sourceElement"),
-            item.get("数据源"),
             item.get("发布或实施机构"),
             item.get("发布机关"),
-            item.get("来源"),
-            vo.get("typeName"),
-            vo.get("sourceName"),
         ),
         "date": first_str(item.get("发布日期"), item.get("date"), item.get("发布时间"), item.get("createDate"), vo.get("dateTime"), vo.get("createDate")),
+        "expired_at": first_str(item.get("失效日期"), item.get("expired_at")),
         "url": first_str(item.get("sourceUrl"), item.get("source_url"), item.get("源网址"), item.get("原文链接"), item.get("url"), item.get("原文"), vo.get("sourceUrl"), vo.get("url")),
         "policy_url": first_str(item.get("policyUrl"), item.get("policy_url"), vo.get("policyUrl")),
         "excerpt": segment.get("text") or paragraph_text(item),
@@ -1582,7 +1579,7 @@ def render_source_card(source: Dict[str, str], for_print: bool = False) -> str:
         vk = f'<span class="sc-vk warn">◐ {reason}</span>'
         note_html = ""
     links = render_source_links(source.get("url"), source.get("policy_url", ""), source.get("snapshot", ""))
-    # 关键性行：有文号（接口 policyFiles 匹配）时"文号 · 数据源 · 日期"，否则"数据源 · 日期"。
+    # 关键性行：有文号（接口 policyFiles 匹配）时"文号 · 发布机关 · 日期"，否则"发布机关 · 日期"。
     # 文号必须是标准格式——政府公文"〔年份〕序号"（杭政函〔2022〕81号）、公告/令类"第X号"
     # （财政部税务总局公告2023年第19号、主席令第三十五号、国务院令第765号，含汉字数字）；
     # 描述性文字（"XX印发"类自造描述）不显示，当无文号处理。
@@ -1590,6 +1587,8 @@ def render_source_card(source: Dict[str, str], for_print: bool = False) -> str:
     _dn = _dn if re.search(r"〔\d{4}〕\s*\d+\s*号|第\s*(?:\d+|[〇零一二三四五六七八九十百千]+)\s*号", _dn) else ""
     meta_parts = [v for v in [_dn, source.get("agency"), source.get("date"), source.get("area")]
                   if v and v != "未知来源"]
+    if source.get("expired_at"):
+        meta_parts.append(f"旧版 · 失效于 {source['expired_at']}")
     meta = " | ".join(meta_parts)
     # 高可信徽标：仅"发布日期可信度=高"（模型治理入库、标题模型精抽）的材料；"较高"（门户抓取）不标。
     conf_badge = ""

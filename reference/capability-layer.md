@@ -102,7 +102,7 @@ python3 {baseDir}/scripts/source_cards.py \
 | 类型 | 必填 |
 |---|---|
 | `direct` | `source_ids`、`quote`、`jurisdiction`；带数量时 `count` |
-| `calculation` | `tool=calc_period.py`、`convention`、`days/interest`；必须同时有 `start/end/principal/annual_rate` 供重算，或 `aggregate_of` 指向其他 calculation claim |
+| `calculation` | 日期/利息：`tool=calc_period.py`、`convention`、`start/end/principal/annual_rate`，写回 `days/interest`，或 `aggregate_of` 指向其他 calculation claim；纯算术：`tool=calc_legal.py`、`mode`、`inputs`，写回 `amount/months_factor/total/additional/value` 至少一项 |
 | `negative` | `as_of`、`coverage`、`wording` |
 | `inference` | `wording`（通常/一般/以属地……认定为准） |
 | `external` | `source_ids` 或 `url`、`source_nature`、`jurisdiction`、`question_jurisdiction`、`as_of`；次级媒体还要 `official_value` 或“待核验”措辞；混合来源写 `mixed_sources` |
@@ -126,7 +126,7 @@ python3 {baseDir}/scripts/verify_claims.py \
 - claim / 来源 / 问题的地域是否一致；
 - 来源是否抓取失败；
 - direct 的 quote 是否在 span 里、count 是否等于枚举数；
-- calculation 是否等于 `calc_period.py` 的输出；
+- calculation 是否等于 `calc_period.py`（日期/利息）或 `calc_legal.py`（纯算术）的输出；
 - negative 是否有截止日期和检索覆盖；
 - inference 是否有“通常/以属地……认定为准”；
 - external 的来源等级是否够、次级媒体是否带官方口径/待核验；

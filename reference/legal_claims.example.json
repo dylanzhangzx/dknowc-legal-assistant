@@ -56,5 +56,22 @@
     "question_jurisdiction": "福建省",
     "value": "208元/月",
     "answer_anchor": "官方公开口径仍为190元/月"
+  },
+  {
+    "id": "c6",
+    "type": "calculation",
+    "text": "经济补偿金135,000元（18,000×7.5）",
+    "tool": "calc_legal.py",
+    "mode": "severance",
+    "inputs": {
+      "monthly_wage": 18000,
+      "years": 7,
+      "months": 3
+    },
+    "months_factor": "7.5",
+    "amount": "135000.00",
+    "rule_ref": "c1",
+    "assumptions": "未传入 capped_wage，按未触发三倍社平封顶计算",
+    "answer_anchor": "经济补偿金135,000元"
   }
 ]

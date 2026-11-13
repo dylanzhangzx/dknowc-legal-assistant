@@ -30,6 +30,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import calc_legal
 from calc_period import build_result as calc_build_result
 from calc_period import parse_date, parse_decimal, parse_rate
 from check_answer import count_enumerations, quote_in_text
@@ -82,7 +83,57 @@ def _same_jurisdiction(left: str, right: str) -> bool:
     return False
 
 
+CALC_TOOLS = ("calc_period.py", "calc_legal.py")
+CALC_LEGAL_OUTPUTS = (
+    "amount", "total", "additional", "normal_wage", "months_factor", "value", "wage_used",
+)
+
+
+def _decimal_equal(left: Any, right: Any) -> bool:
+    try:
+        return Decimal(str(left)) == Decimal(str(right))
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _calc_legal_inputs(claim: Dict[str, Any]) -> Dict[str, Any]:
+    if str(claim.get("mode") or "") == "custom":
+        return {
+            "inputs": claim.get("inputs") if isinstance(claim.get("inputs"), dict) else {},
+            "formula": claim.get("formula"),
+        }
+    if isinstance(claim.get("inputs"), dict):
+        return dict(claim["inputs"])
+    keys = (
+        "monthly_wage", "years", "months", "capped_wage", "cap_years",
+        "daily_wage", "days", "paid_ratio", "base", "ratio", "multiple",
+    )
+    return {key: claim[key] for key in keys if claim.get(key) is not None}
+
+
+def calc_legal_matches(claim: Dict[str, Any]) -> Tuple[bool, str]:
+    mode = str(claim.get("mode") or "").strip()
+    if not mode:
+        return False, "calculation(calc_legal.py) 缺少 mode"
+    inputs = _calc_legal_inputs(claim)
+    if not inputs:
+        return False, "calculation(calc_legal.py) 缺少 inputs"
+    try:
+        result = calc_legal.calculate(mode, inputs)
+    except Exception as exc:  # noqa: BLE001
+        return False, f"calc_legal.py 无法重算：{exc}"
+    present = [key for key in CALC_LEGAL_OUTPUTS if claim.get(key) is not None]
+    if not present:
+        return False, "calculation(calc_legal.py) 必须写回工具结果（如 amount/months_factor）"
+    for key in present:
+        if not _decimal_equal(claim.get(key), result.get(key)):
+            return False, f"{key} 台账={claim.get(key)}，工具={result.get(key)}"
+    return True, ""
+
+
 def _calc_matches(claim: Dict[str, Any], claim_map: Dict[str, Dict[str, Any]]) -> Tuple[bool, str]:
+    if str(claim.get("tool") or "") == "calc_legal.py":
+        return calc_legal_matches(claim)
     required = ("start", "end", "principal", "annual_rate")
     if not all(claim.get(k) for k in required):
         aggregate = claim.get("aggregate_of")
@@ -278,11 +329,13 @@ def verify(claims: List[Dict[str, Any]], sources: List[Dict[str, Any]],
                 local.append("direct 依据含次级媒体/未知来源，不能作为法律条文结论")
 
         elif ctype == "calculation":
-            convention = str(claim.get("convention") or "").strip()
-            if convention not in ("include-end", "exclude-end"):
-                local.append("calculation 必须写 convention=include-end/exclude-end")
-            if str(claim.get("tool") or "") != "calc_period.py":
-                local.append("calculation 必须写 tool=calc_period.py")
+            tool = str(claim.get("tool") or "").strip()
+            if tool not in CALC_TOOLS:
+                local.append("calculation 必须写 tool=calc_period.py 或 calc_legal.py")
+            if tool == "calc_period.py":
+                convention = str(claim.get("convention") or "").strip()
+                if convention not in ("include-end", "exclude-end"):
+                    local.append("calculation 必须写 convention=include-end/exclude-end")
             ok, msg = _calc_matches(claim, claim_map)
             if not ok:
                 local.append(msg)

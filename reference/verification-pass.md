@@ -29,7 +29,7 @@
 
 重点检查：
 1. direct：quote 是否在材料里；count 是否等于引文里（一）（二）……的实际项数。
-2. calculation：是否用 calc_period.py；days/convention/interest 是否与工具输出一致；答案是否写明“含首尾/算头不算尾”。
+2. calculation：日期/利息是否用 calc_period.py，days/convention/interest 是否与工具输出一致，答案是否写明“含首尾/算头不算尾”；纯算术是否用 calc_legal.py，mode/inputs 是否齐全，months_factor/amount/total/additional/value 是否与工具输出一致，是否写明封顶等假设。
 3. negative：是否写“截至YYYY-MM-DD，公开渠道未见/未检索到”；禁止“未上调/未发生/不存在”；as_of/coverage 是否齐全。
 4. inference：是否写“通常/一般/以属地……认定为准”；禁止“属于/就是”。
 5. external：source_nature、as_of、jurisdiction 与 question_jurisdiction 是否齐全；外省材料是否被套到本省问题；只有次级媒体来源时是否有官方口径或“待核验”措辞。

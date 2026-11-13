@@ -542,7 +542,8 @@ def main() -> None:
     # 但问题字面未覆盖的主题。清单 = 机构分布 + 文号 + 涉及金额 + 全量标题，
     # 同时写入 search_meta.pool_summary（供程序复用）并打印到 stdout（供 Agent 扫描）。
     def _art_org(a: Dict[str, Any]) -> str:
-        return str(a.get("数据源") or a.get("发布或实施机构") or "").strip() or "（未标注机构）"
+        # 机构分布按发文机关统计（2026-11-13 统一口径）；数据源只是抓取站点，不作机构。
+        return str(a.get("发布或实施机构") or a.get("发布机关") or "").strip() or "（未标注机构）"
 
     org_counts: Dict[str, int] = {}
     for a in merged:

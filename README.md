@@ -42,6 +42,7 @@ scripts/
   legal_client.py            001/002/003/005/012 接口客户端
   legal_search.py            法条模式 + 语义模式检索（含政策全文回退）
   calc_period.py             日期天数与利息计算（含首尾/算头不算尾）
+  calc_legal.py              纯算术（经济补偿折算/年假300%/比例/倍数/封顶）
   question_profile.py        问题画像（地域/时点/领域/实体）
   source_cards.py            材料画像（地域/机关/来源等级/抓取状态）
   verify_claims.py           结论图通用校验（地域/引文/计算/冲突）

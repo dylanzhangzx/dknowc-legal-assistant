@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+from datetime import date
 from pathlib import Path
 from typing import Any, Dict, List
 from urllib.parse import urlparse
@@ -68,6 +69,32 @@ def _first(item: Dict[str, Any], *keys: str) -> str:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
+
+
+_DATE_PATTERN = re.compile(r"(\d{4})\s*[-/.年]\s*(\d{1,2})\s*[-/.月]\s*(\d{1,2})\s*日?")
+_COMPACT_DATE = re.compile(r"^(\d{4})(\d{2})(\d{2})$")
+
+
+def _norm_date(value: Any) -> str:
+    """把 2026年1月1日 / 2026.01.01 / 2026/01/01 / 20260101 统一成 ISO 日期。
+
+    数据库里的失效日期不全是 ISO 格式；按字符串直接比较会把“2026年1月1日”判成
+    未失效（2026-11-13 审核重要项）。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    match = _DATE_PATTERN.search(text)
+    parts = match.groups() if match else None
+    if not parts:
+        compact = _COMPACT_DATE.match(text)
+        parts = compact.groups() if compact else None
+    if not parts:
+        return ""
+    try:
+        return date(int(parts[0]), int(parts[1]), int(parts[2])).isoformat()
+    except ValueError:
+        return ""
 
 
 def _articles(payload: Any) -> List[Dict[str, Any]]:
@@ -159,7 +186,7 @@ def _is_official(item: Dict[str, Any]) -> bool:
 def _doc_type(item: Dict[str, Any]) -> str:
     title = _first(item, "文章标题", "标题")
     doc_no = _first(item, "发文字号", "文号")
-    issuer = _first(item, "发布或实施机构", "数据源")
+    issuer = _first(item, "发布或实施机构", "发布机关")
     text = title + " " + doc_no + " " + issuer
     if re.search(r"GB(?:/T)?\s*\d", text):
         return "国家标准"
@@ -216,16 +243,20 @@ def _spans(item: Dict[str, Any]) -> List[str]:
     return spans
 
 
-def build_cards(payload: Any, question_jurisdiction: str = "") -> Dict[str, Any]:
+def build_cards(payload: Any, question_jurisdiction: str = "", as_of: str = "") -> Dict[str, Any]:
     cards: List[Dict[str, Any]] = []
     for idx, item in enumerate(_articles(payload), start=1):
         spans = _spans(item)
         text = "\n".join(spans)
         jurisdiction = _infer_jurisdiction(item, text)
+        expired_at = _first(item, "失效日期", "expired_at")
+        expired_iso = _norm_date(expired_at)
+        as_of_iso = _norm_date(as_of)
+        is_expired = bool(expired_iso and as_of_iso and expired_iso < as_of_iso)
         cards.append({
             "id": str(item.get("文章Id") or f"s{idx}"),
             "title": _first(item, "文章标题", "标题"),
-            "issuer": _first(item, "发布或实施机构", "数据源"),
+            "issuer": _first(item, "发布或实施机构", "发布机关"),
             "jurisdiction": jurisdiction,
             "jurisdiction_status": "known" if jurisdiction else "unknown",
             "doc_type": _doc_type(item),
@@ -236,6 +267,12 @@ def build_cards(payload: Any, question_jurisdiction: str = "") -> Dict[str, Any]
             "official": _is_official(item),
             "published_at": _first(item, "发布日期", "date"),
             "effective_at": _first(item, "生效日期", "effectiveDate"),
+            "expired_at": expired_at,
+            "is_expired": is_expired,
+            "version_note": (
+                f"材料标注失效日期 {expired_at}，为旧版本；现行版本请走法条模式"
+                if is_expired else ""
+            ),
             "url": _first(item, "源网址", "url", "原文链接"),
             "doc_number": _first(item, "发文字号", "文号"),
             "channel": _channel(item),
@@ -260,10 +297,12 @@ def main() -> int:
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         parser.error(f"输入不可读：{exc}")
     question_jurisdiction = ""
+    as_of = ""
     if args.profile:
         try:
             profile = json.loads(safe_read_path(args.profile).read_text(encoding="utf-8"))
             question_jurisdiction = str(profile.get("jurisdiction") or "")
+            as_of = str(profile.get("as_of") or "")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"profile 不可读：{exc}")
 
@@ -272,7 +311,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     out.parent.mkdir(parents=True, exist_ok=True)
-    result = build_cards(payload, question_jurisdiction)
+    result = build_cards(payload, question_jurisdiction, as_of)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(out), "sources": len(result["sources"])}, ensure_ascii=False, indent=2))
     return 0

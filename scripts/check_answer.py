@@ -89,8 +89,20 @@ DAY_COUNT_QUALIFIERS = ("含首尾", "算头不算尾", "include-end", "exclude-
 _ENUM_CN = re.compile(r"[（(]\s*([一二三四五六七八九十]+)\s*[）)]")
 _ENUM_NUM = re.compile(r"(?m)^\s*(\d{1,2})[.、]\s*")
 _ARTICLE_COUNT = re.compile(
-    r"第([一二三四五六七八九十百零〇0-9]+)条[^。；\n]{0,60}?([一二三四五六七八九十]+)项"
+    r"第(?P<article>[一二三四五六七八九十百零〇0-9]+)条"
+    r"(?P<middle>[^。；\n]{0,40}?)"
+    r"(?P<number>[一二三四五六七八九十]+)项"
+    r"(?P<tail>[^，。；\n]{0,6})"
 )
+# 数量断言线索：只有这些语境才把“N项”当作总数，避免把“哪一项/第一项”误判。
+_COUNT_CUES = ("共", "共计", "总计", "合计", "有", "为", "分为", "包括", "包含",
+               "列举", "列明", "载明", "明确", "规定", "计", "履行", "承担",
+               "享有", "负有", "设置", "设定", "配备", "罗列", "载有", "列有",
+               "要求", "需要")
+_COUNT_TAIL = ("职责", "义务", "情形", "条件", "事实", "规定", "要求", "内容",
+               "权利", "措施", "行为", "事项", "标准", "步骤", "材料", "要件",
+               "要素", "方式", "途径", "类型", "种类", "项目", "程序", "期限", "责任")
+_SKIP_SUFFIX = tuple("第哪前后任某每逐同这那下上本该")
 _CN_DIGITS = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9}
 
 
@@ -171,6 +183,8 @@ def load_claims(path: Path) -> List[Dict[str, Any]]:
 
 def validate_claims(claims: List[Dict[str, Any]], material_text: str = "") -> List[str]:
     """检查台账本身：类型、枚举数量、引文是否存在、必填口径。"""
+    import verify_claims  # 延迟导入：verify_claims 反向复用本模块的引文/计数函数
+
     issues: List[str] = []
     for idx, claim in enumerate(claims, start=1):
         cid = str(claim.get("id") or f"claims[{idx}]")
@@ -224,25 +238,60 @@ def validate_claims(claims: List[Dict[str, Any]], material_text: str = "") -> Li
                 if not str(claim.get("official_value") or "").strip() and not str(claim.get("wording") or "").strip():
                     issues.append(f"{cid}：只有次级媒体来源时，必须写 official_value 或“待核验”措辞")
         elif ctype == "calculation":
-            if not str(claim.get("convention") or "").strip():
-                issues.append(f"{cid}：calculation 必须写 convention（include-end/exclude-end）")
-            if not str(claim.get("tool") or "").strip():
-                issues.append(f"{cid}：calculation 必须写 tool（calc_period.py）")
-            required = ("start", "end", "principal", "annual_rate")
-            if not all(claim.get(k) for k in required) and not claim.get("aggregate_of"):
-                issues.append(f"{cid}：calculation 必须写 start/end/principal/annual_rate，或 aggregate_of")
+            tool = str(claim.get("tool") or "").strip()
+            if tool not in verify_claims.CALC_TOOLS:
+                issues.append(f"{cid}：calculation 必须写 tool（calc_period.py 或 calc_legal.py）")
+            elif tool == "calc_legal.py":
+                ok, msg = verify_claims.calc_legal_matches(claim)
+                if not ok:
+                    issues.append(f"{cid}：{msg}")
+            else:
+                if not str(claim.get("convention") or "").strip():
+                    issues.append(f"{cid}：calculation 必须写 convention（include-end/exclude-end）")
+                required = ("start", "end", "principal", "annual_rate")
+                if not all(claim.get(k) for k in required) and not claim.get("aggregate_of"):
+                    issues.append(f"{cid}：calculation 必须写 start/end/principal/annual_rate，或 aggregate_of")
     return issues
 
 
+def _is_count_assertion(middle: str, tail: str) -> bool:
+    """判断“第X条……N项”是在说总数，还是在说“第N项/哪一项”。
+
+    计数断言：共三项、规定三项、有三项、三项职责、三项。
+    非计数：第一项、哪一项、前一项、任一项、某一项、每一项、该项、其中一项。
+    """
+    middle = middle or ""
+    tail = tail or ""
+    stripped = middle.strip()
+    if stripped.endswith(_SKIP_SUFFIX):
+        return False
+    if "其中" in stripped or "任何" in stripped:
+        return False
+    if not stripped:
+        return True
+    # “第四十条的三项”“第一款的三项”：结构助词“的”后接数量，是总数。
+    if stripped.endswith("的"):
+        return True
+    if any(cue in stripped for cue in _COUNT_CUES):
+        return True
+    return any(noun in tail for noun in _COUNT_TAIL)
+
+
 def scan_article_counts(answer: str, claims: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    """答案里的“第X条共N项”必须与台账中的 direct.count 对得上。"""
+    """答案里的“第X条共N项/规定N项”必须与台账中的 direct.count 对得上。
+
+    只校验总数断言；“第一项/哪一项/前一项”等指代或疑问不算数量结论。
+    """
     findings: List[Dict[str, str]] = []
     for lineno, raw in enumerate(answer.splitlines(), 1):
         line = raw.strip()
         if not line or line.startswith(">") or line.startswith("```"):
             continue
         for match in _ARTICLE_COUNT.finditer(line):
-            article, number_text = match.group(1), match.group(2)
+            article = match.group("article")
+            number_text = match.group("number")
+            if not _is_count_assertion(match.group("middle"), match.group("tail")):
+                continue
             stated = cn_to_int(number_text)
             if stated <= 0:
                 continue

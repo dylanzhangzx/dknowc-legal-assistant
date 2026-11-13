@@ -40,13 +40,33 @@
     "type": "calculation",
     "text": "第二段2,274天、利息747,616.44元",
     "tool": "calc_period.py",
-    "convention": "include-end"
+    "convention": "include-end",
+    "start": "2020-08-20",
+    "end": "2026-11-10",
+    "principal": "1000000",
+    "annual_rate": "12%",
+    "days": 2274,
+    "interest": "747616.44"
+  },
+  {
+    "id": "c5",
+    "type": "calculation",
+    "text": "经济补偿金135,000元（18,000×7.5）",
+    "tool": "calc_legal.py",
+    "mode": "severance",
+    "inputs": {"monthly_wage": 18000, "years": 7, "months": 3},
+    "months_factor": "7.5",
+    "amount": "135000.00",
+    "rule_ref": "c1",
+    "assumptions": "未传入 capped_wage，按未触发三倍社平封顶计算"
   }
 ]
 ```
 
 - `direct`：条文/文件原文直接支持。带 `count` 的，必须按 `quote` 里的（一）（二）……逐项数；数量对不上直接判不合格。
-- `calculation`：必须先用 `scripts/calc_period.py` 算出 `days/convention/interest`，把输出原样写进答案；不得心算。台账里必须带 `start/end/principal/annual_rate` 供重算，合计类 claim 用 `aggregate_of` 指向分项 claim。
+- `calculation`：分两种，都必须先跑脚本、把输出原样写进答案，不得心算。
+  - 日期/利息：用 `scripts/calc_period.py`，台账带 `tool=calc_period.py`、`convention`、`start/end/principal/annual_rate`，写回 `days/interest`；合计类用 `aggregate_of` 指向分项 claim。
+  - 纯算术（经济补偿年限折算、年假 300%、比例/倍数、封顶）：用 `scripts/calc_legal.py`，台账带 `tool=calc_legal.py`、`mode`、`inputs`，写回 `amount/months_factor/total/additional/value` 中至少一项。经济补偿用 `mode=severance`，`inputs` 写 `monthly_wage/years/months`（月数 0-11），脚本按“满年 + 满 6 个月按 1 年 + 不满 6 个月按 0.5”算折算月数；已触发三倍社平封顶时再传 `capped_wage`，脚本按 12 年封顶。
 - `negative`：只能写“截至YYYY-MM-DD，公开渠道未见/未检索到……”，不能写“未上调/未发生/不存在”；必须记录 `coverage`（查了哪些渠道）。
 - `inference`：从定义、原则推到具体对象/业态的结论。必须写“通常/一般/以属地……认定为准”，不能写“属于/就是”。
 - `external`：外部公开数值/事实。必须写 `source_nature`（政府网站/官方媒体/次级媒体/未知；无法判断写“未知”，不要合并成“次级媒体/未知”）、`as_of`、`jurisdiction`（来源地域）和 `question_jurisdiction`（问题地域）；两者不一致且都不是“全国/国家”时不得使用。只有次级媒体或未知来源时，必须同时写 `official_value` 或“未见正式文件、待核验”的 `wording`，不能把媒体数值直接当第一结论。
@@ -59,6 +79,7 @@
 ## 二、答案与引用规范
 
 - 法条引用格式：`《中华人民共和国劳动合同法》第四十七条（2012年修正）[1]`
+- 标注机构时的写法（2026-11-13 统一）：政策依据写“发文机构：XX”，数据支撑/参考案例写“来源：XX”；不使用“数据源：XX”。“数据源”是抓取站点，不是发文机关，不进正文。
 - 条文原文用 Markdown `>` 引用块，不要用 HTML `<blockquote>`，也不要把 `>` 写在段落中间
 - 引用内容必须与材料段落逐字一致；允许省略号，但不得改写条件、数字、主体、期限
 - **引用块只能放材料里能逐字找到的原文**：找不到就转述并注明依据，或删掉。渲染器会逐块比对，找不到原文的引用块会被标“未在材料中找到该句原文”，报告判核验未通过
@@ -75,7 +96,7 @@
 
 - **算例必须复核**：年限折算逐项写出（满年按月；6 个月以上不满 1 年按 1 年；不满 6 个月按 0.5 个月），提交前重算
 - **期间天数必须写明口径**：按“自然日含首尾”（`include-end`）或“算头不算尾”（`exclude-end`）计算，表头或算例首句写明；同一报告分段必须统一。写“至X日”默认含当日；若按算头不算尾，要写“至X日（不含）”。分段点落在起止日时，先确认边界日只计一次。
-- **日期/利息计算先跑 `calc_period.py`**：任何期间、天数、利息、违约金计算，先运行脚本并把 `days/convention/interest` 原样写进答案；不得心算。分段计息每段单独跑一次，再相加。
+- **计算先跑脚本，不得心算**：任何期间、天数、利息、违约金先跑 `calc_period.py`，把 `days/convention/interest` 原样写进答案；经济补偿年限折算、年假 300%、比例/倍数、封顶先跑 `calc_legal.py`，把 `months_factor/amount/total/additional/value` 原样写进答案。分段计息每段单独跑一次，再相加。
 - **定义不能直接等同于具体对象**：从“公众聚集场所”等法定定义推具体业态时，写“达到……规模的，通常按……管理；是否纳入以属地主管机关认定为准”，不得写“XX就是/属于……”，否则后续许可、罚则会过度适用。
 - **两个高频算错点**：
   1. 年休假 300% 要乘 3：日工资 × 天数 × 300%（其中含正常工资 100%，额外主张 200%）。例：日工资 1,379 元、10 天，300% 为 41,379 元，不是 13,800 元
@@ -142,7 +163,7 @@ python3 {baseDir}/scripts/check_answer.py \
 ```
 
 - 扫描两类问题：①“只能/唯一/一定/一旦/就没了/一并被覆盖/性质变成违法解除”等绝对化措辞；②“累计工作”“缴至”等未注明假设的表述。引用块与代码块内不算
-- 结论台账检查：`direct` 的 `count` 与 `quote` 枚举数不一致、`direct.quote` 在材料中找不到、`negative` 缺 `as_of/coverage/wording`、`inference` 缺限定措辞、`external` 缺 `source_nature/as_of` 或次级媒体缺 `official_value/待核验`、`direct` 缺 `source_ids`、`calculation` 缺 `tool/convention` 或 `start/end/principal/annual_rate`/`aggregate_of`、`mixed_sources` 不说明政府网站与次级媒体，均判不合格
+- 结论台账检查：`direct` 的 `count` 与 `quote` 枚举数不一致、`direct.quote` 在材料中找不到、`negative` 缺 `as_of/coverage/wording`、`inference` 缺限定措辞、`external` 缺 `source_nature/as_of` 或次级媒体缺 `official_value/待核验`、`direct` 缺 `source_ids`、`calculation` 的 `tool` 非法、`calc_period.py` 缺 `convention` 或 `start/end/principal/annual_rate`/`aggregate_of`、`calc_legal.py` 缺 `mode/inputs` 或结果对不上、`mixed_sources` 不说明政府网站与次级媒体，均判不合格
 - 另有句式检查：条件 + 后果（如“一旦……就会……”“程序不成立就……违法……”），同义改写也会命中
 - 有命中项时：优先改写为带条件/例外的表述；确属事实描述或条文封闭列举的，在 `legal_selfcheck.json` 的 `absolute_review` 里**按行号**逐条说明：
   ```json

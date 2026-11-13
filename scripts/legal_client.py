@@ -83,7 +83,12 @@ def _post(url: str, payload: Dict[str, Any], timeout: int = 60, key: Optional[st
         raise LegalApiError("parse", f"返回非 JSON: {raw[:200]}")
 
 
-def filter_policies(title: str, limit: int = 20, filters: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+def filter_policies(
+    title: str,
+    limit: int = 20,
+    filters: Optional[Dict[str, Any]] = None,
+    timeout: int = 60,
+) -> List[Dict[str, Any]]:
     payload: Dict[str, Any] = {
         "filters": {"title": title},
         "searchType": ["policy"],
@@ -91,7 +96,7 @@ def filter_policies(title: str, limit: int = 20, filters: Optional[Dict[str, Any
     }
     if filters:
         payload["filters"].update(filters)
-    body = _post(POLICY_FILTER, payload)
+    body = _post(POLICY_FILTER, payload, timeout=timeout)
     if body.get("ret") != 1 or (body.get("code") or 0) != 200:
         raise LegalApiError("policy-filter", body.get("message") or f"ret={body.get('ret')} code={body.get('code')}", None, body)
     content = body.get("content") or {}

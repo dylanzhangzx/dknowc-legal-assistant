@@ -41,6 +41,7 @@ CN_DIGITS = "零一二三四五六七八九"
 MIN_ARTICLE_CHARS = 10
 
 HEAD_RE = re.compile(r"第[零一二三四五六七八九十百千〇]+条(?:之[一二三四五六七八九十]+)?")
+CHAPTER_RE = re.compile(r"第[零一二三四五六七八九十百千〇]+(?:分)?[章节编]")
 BAD_TITLE_WORDS = (
     "通知", "报告", "意见", "批复", "答复", "解读", "宣传提纲", "学习", "检查",
     "修正案", "修改决定", "决定", "解释", "办法", "指引", "公告", "问答", "案例", "判决", "裁定",
@@ -511,25 +512,134 @@ def resolve_law(law: str, max_copies: int = 6, article: str = "",
 
 # ---------- 条文切分 ----------
 
-def _heading_positions(text: str) -> List[re.Match]:
-    """筛掉正文里“本法第四十七条”“劳动合同法第四十七条”这类行内引用。
+_SENTENCE_BREAK = "。；！？"
+_CHAPTER_TITLE_MAX = 40
+# 结构标题只可能出现在文件开头、句末标点之后、或换行之后（允许标点与标题之间夹空格）。
+# 书名号右半边 `》` 不算句首：“《劳动合同法》第三章”是引用他法章节，不是结构标题。
+_HEADING_LEAD = "。；！？\n\r”）』」】"
 
-    判决/法条正文中，条标题通常出现在行首、空格或标点之后；行内引用前面紧邻
-    的是汉字（法、定、照、据等）。只保留前一个字符不是汉字的匹配，能显著减少
-    把“第四十七条规定的……”误当条标题的情况。
+
+def _at_sentence_start(text: str, start: int) -> bool:
+    if start == 0:
+        return True
+    prev = text[start - 1]
+    if prev in _HEADING_LEAD:
+        return True
+    if prev.isspace():
+        j = start - 1
+        newline = False
+        while j >= 0 and text[j].isspace():
+            if text[j] in "\n\r":
+                newline = True
+            j -= 1
+        # 独立成行就是结构标题；同一行内的空格（如“第三章 第四十六条”）不算。
+        if newline:
+            return True
+        return j < 0 or text[j] in _HEADING_LEAD
+    return False
+
+
+def _heading_positions(text: str) -> List[re.Match]:
+    """条标题只认句首位置：文件开头、句末标点后、换行后。
+
+    条内引用（“依照本法第四十六条”“劳动合同法第四十七条”“第三章 第四十六条”）
+    前面是汉字、逗号或章标题，不是句首，一律排除。这比“前一个字符不是汉字”更严，
+    能覆盖“章引用 + 条引用”的组合（2026-11-13 复审阻断）。
     """
-    all_matches = list(HEAD_RE.finditer(text))
-    filtered: List[re.Match] = []
-    for match in all_matches:
-        start = match.start()
-        if start == 0:
-            filtered.append(match)
+    return [match for match in HEAD_RE.finditer(text) if _at_sentence_start(text, match.start())]
+
+
+def _sentence_window(text: str, start: int) -> str:
+    """取本句内、标题之前的文本（从上一个句末标点或换行开始）。"""
+    for i in range(start - 1, -1, -1):
+        if text[i] in _SENTENCE_BREAK or text[i] in "\n\r":
+            return text[i + 1:start]
+    return text[:start]
+
+
+def _is_structural_chapter(text: str, start: int) -> bool:
+    """判断“第X章/节/编”是结构标题还是条内引用。
+
+    结构标题：文件开头、句末标点/换行之后；跟在文件标题后（“……劳动合同法第一章
+    总则”）；或跟在分编/章/节标题后（“第二分编所有权第四章一般规定”）。
+    条内引用：“依照本法第三章”“根据本条例第二章”——前面是「依照/根据/本法/本条例」。
+    """
+    if _at_sentence_start(text, start):
+        return True
+    prev = text[start - 1]
+    if not re.match(r"[一-鿿]", prev):
+        return False
+    # 只看标题前的一小段：章标题很短，前后相邻的都是结构标题；拉整句会把正文里的
+    # “包括”“除外”等词误当引用信号（民法典目录整段无句号时尤其明显）。
+    window = text[max(0, start - 24):start]
+    # 书名号 = 引用其他法律（“参见《劳动合同法》第三章”），不是本文件的结构标题。
+    if "《" in window:
+        return False
+    if re.search(r"(本法|该法|本条例|本办法|本规定|本章|本节|本编)", window):
+        return False
+    if re.search(
+        r"(依照|根据|按照|依据|参照|适用|违反|符合|具有|属于|包括|详见|参见|另见|载于)",
+        window,
+    ):
+        return False
+    if CHAPTER_RE.search(window) or re.search(r"(附则|附录|附件)$", window):
+        return True
+    # 文件标题直接接章标题：“……劳动合同法第一章总则”，前文必有法/条例/规定/办法等文种词。
+    return bool(re.search(r"[法条例规定办法细则典]", window))
+
+
+def _chapter_positions(text: str) -> List[int]:
+    """只认结构章/节/编标题，排除条内引用。"""
+    return [match.start() for match in CHAPTER_RE.finditer(text)
+            if _is_structural_chapter(text, match.start())]
+
+
+def _structural_headings(text: str) -> List[re.Match]:
+    """条标题位置：常规标题 + 每个结构章标题后的第一条。
+
+    行内引用（“劳动合同法第四十七条”“依照本法第四十六条”）仍然排除；章标题后的
+    第一条是结构标题，必须保留，否则切条会越到下一章。只补每个章的第一条，避免把
+    条内引用再当成条标题。
+    """
+    kept = _heading_positions(text)
+    kept_starts = {match.start() for match in kept}
+    chapters = _chapter_positions(text)
+    all_heads = list(HEAD_RE.finditer(text))
+    out = list(kept)
+    added: set = set()
+    for pos in chapters:
+        nxt = next((m for m in all_heads if m.start() > pos), None)
+        if nxt is None or nxt.start() in kept_starts or nxt.start() in added:
             continue
-        prev = text[start - 1]
-        if re.match(r"[一-鿿]", prev):
+        gap = text[pos:nxt.start()]
+        if len(gap) <= _CHAPTER_TITLE_MAX and not re.search(r"[。；！？\n\r]", gap):
+            out.append(nxt)
+            added.add(nxt.start())
+    # “附则/附录/附件”不是第X章，但同样是结构标题；其后的第一条按结构条标题处理。
+    for match in all_heads:
+        if match.start() in kept_starts or match.start() in added:
             continue
-        filtered.append(match)
-    return filtered or all_matches
+        window = _sentence_window(text, match.start())
+        if re.search(r"(附则|附录|附件)$", window) and len(window) <= 10:
+            out.append(match)
+            added.add(match.start())
+    # 文件标题与第一条同行连写（“《中华人民共和国民法典》第一条 …”“中华人民共和国民法典
+    # 第一条 …”）：只对本文件的第一条放行。若它前面已经切出过结构条标题，说明这是正文里
+    # 引用他法（“劳动合同法第一条规定的义务”），不能当标题（2026-11-13 复审 4 建议）。
+    for match in all_heads:
+        if match.group() != "第一条" or match.start() in kept_starts or match.start() in added:
+            continue
+        # 前面已经有过结构条标题，说明本文件的条序已经开始，这个“第一条”是正文引用。
+        if any(pos < match.start() for pos in kept_starts):
+            continue
+        window = _sentence_window(text, match.start())[-40:]
+        if len(window) > 40 or re.search(r"(本法|该法|本条例|本办法|本规定|依照|根据|按照|依据|参照|适用|详见|参见)", window):
+            continue
+        if re.search(r"(法|典|条例|规定|办法|细则|章程|》)$", window):
+            out.append(match)
+            added.add(match.start())
+    out.sort(key=lambda match: match.start())
+    return out
 
 
 def extract_article(text: str, article: str) -> Optional[str]:
@@ -537,33 +647,33 @@ def extract_article(text: str, article: str) -> Optional[str]:
     if not target:
         return None
     norm = normalize_width(text)
-    matches = _heading_positions(norm)
+    matches = _structural_headings(norm)
+    chapters = _chapter_positions(norm)
     for i, match in enumerate(matches):
         if match.group() != target:
             continue
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(norm)
+        next_article = matches[i + 1].start() if i + 1 < len(matches) else len(norm)
+        # 章标题也是边界：目标条是章末最后一条时，不能把下一章标题和下一条带进来。
+        next_chapter = next((pos for pos in chapters if pos > match.start()), len(norm))
+        end = min(next_article, next_chapter)
         segment = norm[match.start():end].strip()
         # 最短条文的现实长度：劳动合同法第三十六条只有 28 字（"用人单位与劳动者
         # 协商一致，可以解除劳动合同。"）。原先 30 字的门槛会把这类短文当成没切到，
         # 进而触发"回退前 N 条"，Agent 误以为副本残缺（2026-11-05 Q1 实测）。
         if len(segment) >= MIN_ARTICLE_CHARS:
             return segment
-    # 兜底：直接找目标串，截到下一个“像条标题”的位置
-    idx = norm.find(target)
-    if idx < 0:
-        return None
-    nxt = next((m.start() for m in matches if m.start() > idx + len(target)), None)
-    end = nxt if nxt is not None else min(len(norm), idx + 3000)
-    segment = norm[idx:end].strip()
-    return segment if len(segment) >= MIN_ARTICLE_CHARS else None
+    return None
 
 
 def split_articles(text: str) -> List[Tuple[str, str]]:
     norm = normalize_width(text)
-    matches = _heading_positions(norm)
+    matches = _structural_headings(norm)
+    chapters = _chapter_positions(norm)
     out: List[Tuple[str, str]] = []
     for i, match in enumerate(matches):
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(norm)
+        next_article = matches[i + 1].start() if i + 1 < len(matches) else len(norm)
+        next_chapter = next((pos for pos in chapters if pos > match.start()), len(norm))
+        end = min(next_article, next_chapter)
         body = norm[match.start():end].strip()
         if len(body) >= MIN_ARTICLE_CHARS:
             out.append((match.group(), body))
@@ -594,7 +704,8 @@ def build_statute_article(resolved: Resolved, segments: List[Tuple[str, str]]) -
         "文章类型": "policy",
         "文章标题": resolved.law,
         "原始标题": str(cand.get("title") or ""),
-        "发布或实施机构": str(cand.get("issuingAuthority") or "全国人民代表大会常务委员会"),
+        # 只透传接口给的发文机关，不给默认值（2026-11-13 统一口径：不猜机构）。
+        "发布或实施机构": str(cand.get("issuingAuthority") or ""),
         "数据源": host_of(source_url) or "深知法律法规库",
         "源网址": source_url,
         "发布日期": format_date(parse_date(cand.get("writtenDate")) or resolved.latest_version_date),
