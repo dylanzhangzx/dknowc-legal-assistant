@@ -9,6 +9,25 @@
     "jurisdiction": "全国",
     "source_ids": [
       "s1"
+    ],
+    "elements": [
+      {
+        "element": "主体适格",
+        "fact": "双方存在劳动合同（2023-03 入职）",
+        "evidence_ids": [
+          "s1"
+        ],
+        "gap": ""
+      },
+      {
+        "element": "解除情形",
+        "fact": "公司以经营困难裁员",
+        "evidence_ids": [
+          "s1",
+          "s2"
+        ],
+        "gap": "是否达到第41条人数门槛待用户补充"
+      }
     ]
   },
   {

@@ -19,11 +19,12 @@
   1-based 序号；答案角标 `[n]` 的 n 就用这个编号（渲染器优先读显式编号，不再依赖
   数组位置）。**写答案时读 `编号` 字段，不要按"某一路材料清单里的第几条"编号。**
 
-用法：
+用法（输出统一写会话 run 目录，不写 Skill 安装目录）：
   python3 scripts/merge_search_results.py \
-      --input official-docs/search-results/route1.json --search-key "政策依据路" \
-      --input official-docs/search-results/route2.json --search-key "数据口径路" \
-      --output official-docs/search-results/merged_all.json
+      --run ./runs/20261120-legal-01 \
+      --input route1.json --search-key "政策依据路" \
+      --input route2.json --search-key "数据口径路" \
+      --output merged_all.json
 """
 
 from __future__ import annotations
@@ -37,8 +38,10 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+import path_guard
+
 SKILL_ROOT = Path(__file__).resolve().parent.parent
-SEARCH_RESULTS_DIR = SKILL_ROOT / "official-docs" / "search-results"
+SEARCH_RESULTS_DIR = SKILL_ROOT / "official-docs" / "search-results"  # 历史常量，仅兼容旧引用
 
 # 公文标题前后缀归一（合并去重用）
 TITLE_PREFIX = ("关于印发", "关于", "印发", "发布", "印发《")
@@ -264,7 +267,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="多路检索结果合并（可信/深度混合 → 渲染器统一形态）")
     parser.add_argument("--input", action="append", required=True, help="输入 JSON（可多次传入，每路一个）")
     parser.add_argument("--search-key", action="append", help="对应 --input 路次的搜索条件分组标签（可多次；只传 1 个时应用到全部输入；缺省自动）")
-    parser.add_argument("--output", "-o", help="输出文件名，默认 official-docs/search-results/merged_all.json")
+    parser.add_argument("--output", "-o", help="输出文件名（落到 --run 目录，默认 merged_all.json）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）")
     args = parser.parse_args()
 
     if args.search_key and len(args.search_key) not in (1, len(args.input)):
@@ -280,11 +284,11 @@ def main() -> None:
     total_in = 0
 
     for _ri, (input_path_str, key) in enumerate(zip(args.input, keys)):
-        raw_path = Path(input_path_str).expanduser()
-        if not raw_path.is_absolute():
-            raw_path = (SEARCH_RESULTS_DIR / raw_path.name).resolve()
-        if not raw_path.is_file():
-            raise SystemExit(f"错误：输入文件不存在: {raw_path}")
+        # 相对路径按会话 run 目录解析（不再回退 Skill 内 official-docs/）
+        try:
+            raw_path = path_guard.safe_read_path(input_path_str, args.run)
+        except ValueError as exc:
+            raise SystemExit(f"错误：{exc}") from None
         before = len(articles)
         _collect_route(raw_path, key, articles, policy_files, route_idx=_ri)
         total_in += len(articles) - before
@@ -509,6 +513,23 @@ def main() -> None:
     # 数错会静默绑到另一份材料且核验单不会报警，故改为显式锚点。
     for _idx, _art in enumerate(merged, start=1):
         _art["编号"] = _idx
+        # 旧版标注（1.0.4 随上游内核迁移，从渲染器移到合并层）：接口给了失效日期且已过期的
+        # 材料，在"核验"说明前置"旧版 · 失效于…"——上游材料卡不再有独立失效字段，
+        # 该说明经 build_report_input 映射为材料"核验"说明，卡片如实展示。
+        _expired = str(_art.get("失效日期") or _art.get("expired_at") or "").strip()
+        # 生效时间显式化（律所反馈场景六 P0：引用要能核验"生效时间"）：接口给了生效日期
+        # 而核验说明未提及的，把"生效于 X"并入材料核验说明，卡片如实展示。
+        _eff = str(_art.get("生效日期") or _art.get("effectiveDate") or "").strip()
+        if _eff and _eff not in str(_art.get("核验") or ""):
+            _prev = str(_art.get("核验") or "").strip()
+            _art["核验"] = ("生效于 " + _eff + ("；" + _prev if _prev else ""))
+        if _expired:
+            import re as _re
+            _m = _re.search(r"(\d{4})[年./-]?(\d{1,2})?[月./-]?(\d{1,2})?", _expired)
+            if _m:
+                _note = f"旧版 · 失效于 {_expired}"
+                _prev = str(_art.get("核验") or "").strip()
+                _art["核验"] = (_note + ("；" + _prev if _prev else ""))
 
     # policyFiles 收集去重（writtenText+title 双键）
     pf_seen: set = set()
@@ -525,13 +546,11 @@ def main() -> None:
         pf_out.append(p)
 
     out_name = args.output or "merged_all.json"
-    out = Path(out_name).expanduser()
-    if not out.is_absolute():
-        out = (SEARCH_RESULTS_DIR / out.name).resolve()
     try:
-        out.relative_to(SEARCH_RESULTS_DIR.resolve())
-    except ValueError:
-        raise SystemExit(f"错误：输出文件必须位于 {SEARCH_RESULTS_DIR}") from None
+        out = path_guard.safe_write_path(out_name, args.run)
+        path_guard.refuse_existing(out, kind="输出")
+    except ValueError as exc:
+        raise SystemExit(f"错误：{exc}") from None
 
     result = {
         "search_meta": {"merged": True, "input_routes": len(args.input), "merged_from": [str(Path(x).name) for x in args.input]},

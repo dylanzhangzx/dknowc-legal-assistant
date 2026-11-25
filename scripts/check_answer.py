@@ -447,6 +447,28 @@ def covered(item: Dict[str, str], review: object) -> bool:
     return False
 
 
+# 可回查要素（1.0.4 两轨自验收，与 render_trace_html 共用）：
+# 材料编号、条款号、文号、日期、标准号——任一项即可回查。
+CHECKABLE_PATTERNS = (
+    re.compile(r"\[\d+\]"),
+    re.compile(r"第[一二三四五六七八九十百零〇\d]+条"),
+    re.compile(r"§\s*\d+"),
+    re.compile(r"〔\s*20\d{2}\s*〕"),
+    re.compile(r"（\s*20\d{2}\s*）"),
+    re.compile(r"20\d{2}\s*[-/.年]\s*\d{1,2}"),
+    re.compile(r"20\d{2}\s*年"),
+    re.compile(r"[A-Za-z0-9_./-]+\.(?:json|txt|md|html|csv)", re.I),
+    re.compile(r"GB(?:/T)?\s*\d+", re.I),
+    re.compile(r"法释〔\s*20\d{2}\s*〕\s*\d+号"),
+)
+
+
+def has_checkable_element(text: Any) -> bool:
+    """证据里是否至少有一处可回查的要素（编号/条款/文号/日期/标准号）。"""
+    value = str(text or "")
+    return any(pattern.search(value) for pattern in CHECKABLE_PATTERNS)
+
+
 SELF_CHECK_KEYS = (
     ("fact_basis", "事实有据"),
     ("binding", "角标绑定"),
@@ -459,7 +481,12 @@ SELF_CHECK_FAIL_PREFIXES = ("未通过", "不通过", "不合格", "fail", "fals
 
 
 def validate_selfcheck(path: Path) -> List[str]:
-    """五项自检的值必须以“通过/未通过”开头，否则渲染器会显示“未记录”。"""
+    """五项自检校验（1.0.4 两轨自验收契约）。
+
+    结构化写法：{"verdict": "pass|fail|pending", "basis", "evidence":[…]}；
+    旧字符串写法（“通过/未通过：原因”）兼容。声明"通过"必须带可回查证据，
+    否则渲染器按 evidence_missing 拦截、不出报告。
+    """
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -471,10 +498,68 @@ def validate_selfcheck(path: Path) -> List[str]:
         if key not in data:
             issues.append(f"缺少 {key}（{label}）")
             continue
-        text = str(data.get(key) or "").strip()
+        value = data.get(key)
+        if isinstance(value, dict):
+            verdict = str(value.get("verdict") or "").strip().lower()
+            if verdict not in ("pass", "fail", "pending"):
+                issues.append(f"{key}（{label}）verdict 必须是 pass/fail/pending")
+                continue
+            if verdict != "pass":
+                continue
+            evidence = value.get("evidence")
+            if isinstance(evidence, (list, tuple)):
+                ev_bits = [str(x) for x in evidence if str(x).strip()]
+            elif str(evidence or "").strip():
+                ev_bits = [str(evidence).strip()]
+            else:
+                ev_bits = []
+            basis = str(value.get("basis") or "").strip()
+            if not ev_bits and basis:
+                ev_bits = [basis]
+            joined = "；".join(ev_bits)
+            if not joined.strip() or not has_checkable_element(joined):
+                issues.append(f"{key}（{label}）声明通过但证据无可回查要素"
+                              "（材料编号/条款号/文号/日期/标准号任一），渲染器会拦截")
+            continue
+        text = str(value or "").strip()
         if not text.startswith(SELF_CHECK_PASS_PREFIXES + SELF_CHECK_FAIL_PREFIXES):
             issues.append(f"{key}（{label}）没有以“通过/未通过”开头，报告会显示“未记录”")
     return issues
+
+
+# 隐私红线（律所客户反馈 2026-11-25）：交付答案里不得出现未脱敏的身份证号/手机号。
+# 案号（(2025)京01民终123号）、金额、日期不在此列；脱敏格式（手机号前3位+星号+后4位、身份证前6位+星号）放行。
+_ID_RE = re.compile(r"(?<![0-9Xx])\d{17}[0-9Xx](?![0-9Xx])")
+_MOBILE_RE = re.compile(r"(?<![0-9])1[3-9]\d{9}(?![0-9])")
+_MASKED_OK_RE = re.compile(r"[0-9*]{3}\*{3,}[0-9*]{0,4}")
+
+
+def scan_privacy(answer: str) -> List[Dict[str, str]]:
+    """扫描未脱敏的身份证号与手机号；属隐私硬错误，不能用 absolute_review 放行。"""
+    findings: List[Dict[str, str]] = []
+    lines = answer.split("\n")
+    for idx, line in enumerate(lines, 1):
+        for m in _ID_RE.finditer(line):
+            findings.append({
+                "line": str(idx),
+                "term": m.group(0)[:6] + "********",
+                "text": line,
+                "question": "疑似未脱敏的 18 位身份证号：答案与产物必须脱敏（如 前6位+****），请删改",
+            })
+        for m in _MOBILE_RE.finditer(line):
+            span = line[max(0, m.start() - 2):m.end() + 2]
+            if _MASKED_OK_RE.search(span):
+                continue
+            # 金额/编号常被连续数字误中：排除紧跟"元/号/年度"等上下文
+            if re.search(r"[0-9][万亿]|[万亿]\s*$|编号|案号|第\s*\d+", line[max(0, m.start() - 12):m.end() + 4]):
+                continue
+            findings.append({
+                "line": str(idx),
+                "term": m.group(0)[:3] + "****" + m.group(0)[-2:],
+                "text": line,
+                "question": "疑似未脱敏的 11 位手机号：请改为「前3位+星号+后4位」的脱敏形式或删除",
+            })
+    return findings
 
 
 def main() -> int:
@@ -525,7 +610,10 @@ def main() -> int:
             print(f"  - {issue}", file=sys.stderr)
 
     wording_findings = scan(answer)
-    findings = wording_findings + claim_findings
+    privacy_findings = scan_privacy(answer)
+    findings = wording_findings + claim_findings + privacy_findings
+    # 隐私发现与台账发现同级：硬错误，不能用 absolute_review 放行
+    privacy_keys = {id(item) for item in privacy_findings}
     if not findings and not claim_issues:
         print("措辞检查通过：未发现无条件法律后果、未注明的事实假设或越界的结论措辞")
         return 0
@@ -543,12 +631,13 @@ def main() -> int:
         for item in findings:
             print(f"  第 {item['line']} 行「{item['term']}」：{item['question']}", flush=True)
             print(f"    {item['text'][:180]}", flush=True)
-            if id(item) in claim_keys or not covered(item, review):
+            if id(item) in claim_keys or id(item) in privacy_keys or not covered(item, review):
                 uncovered.append(item)
 
     if claim_issues or uncovered:
         if uncovered:
-            hard_claim = any(id(item) in claim_keys for item in uncovered)
+            hard_claim = any(id(item) in claim_keys or id(item) in privacy_keys
+                             for item in uncovered)
             if hard_claim:
                 hint = "其中包含结论台账/数量类硬错误，不能用 absolute_review 放行。"
             elif not review_loaded and args.selfcheck:

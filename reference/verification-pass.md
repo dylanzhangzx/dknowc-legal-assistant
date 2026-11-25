@@ -1,6 +1,6 @@
 # 交付前独立复核（verification pass）
 
-`check_answer.py` 是机器检查；本步是**另一个复核视角**，专门抓“作者自己觉得自己对”的错误。复核员只拿材料、结论台账和草稿，不看作者写的五项自检。
+`verify_claims.py` + `check_answer.py` 是机器检查（只判结构与台账口径）；本步是**另一个复核视角**，专门抓“作者自己觉得自己对”的错误，产出直接喂给两轨自验收的 **AI 验收轨**（`legal_selfcheck.json` 的结构化五项）。复核员只拿材料、结论台账和草稿，不看作者自己写的五项自检。
 
 ## 什么时候跑
 
@@ -34,13 +34,17 @@
 4. inference：是否写“通常/一般/以属地……认定为准”；禁止“属于/就是”。
 5. external：source_nature、as_of、jurisdiction 与 question_jurisdiction 是否齐全；外省材料是否被套到本省问题；只有次级媒体来源时是否有官方口径或“待核验”措辞。
 6. 草稿里有没有台账外的规范性句子；有就标 fail，要求补台账或删除。
+7. **角标要素分挂**：一句话里的文号、发文日期、文件名、条款号是否分别挂在**载有该要素**的材料上——《办法》条文不能拿来支撑文号，文号在通告里就挂通告。
+8. **经验性统计**（“败诉率最高”“大多数法院”这类）没有材料支撑就判 fail，要求补来源或删掉——不加脚本规则，全靠这一步把关。
+
+复核结论直接写入 `legal_selfcheck.json` 的结构化五项（`{"verdict": "pass|fail|pending", "basis": …, "evidence": [……]}`）；声明“通过”的证据必须带 `[n]`／`第X条`／〔20xx〕文号／日期／文件名／GB 标准号任一可回查要素。
 
 只输出复核结果，不要改写答案，不要给法律建议。
 ```
 
 ## 输出
 
-落盘 `official-docs/search-results/legal_verify.json`：
+落盘 `<run>/legal_verify.json`（`verify_claims.py --run <run> --answer ...`，含 answer/evidence 指纹）：
 
 ```json
 {

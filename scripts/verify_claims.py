@@ -31,6 +31,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import calc_legal
+import trust_digest
 from calc_period import build_result as calc_build_result
 from calc_period import parse_date, parse_decimal, parse_rate
 from check_answer import count_enumerations, quote_in_text
@@ -45,8 +46,8 @@ QUALIFIERS = ("通常", "一般", "原则上", "以属地", "以当地", "以主
 STRONG_TERMS = ("确有", "已经", "属于", "不存在", "全部", "一律", "一定", "已上调", "已执行", "已补发")
 
 
-def _load(path: str) -> Any:
-    return json.loads(safe_read_path(path).read_text(encoding="utf-8"))
+def _load(path: str, run: str | None = None) -> Any:
+    return json.loads(safe_read_path(path, run).read_text(encoding="utf-8"))
 
 
 def _items(data: Any) -> List[Dict[str, Any]]:
@@ -398,29 +399,38 @@ def main() -> int:
     parser.add_argument("--claims", required=True)
     parser.add_argument("--sources", required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--answer", default="")
-    parser.add_argument("--output", default="legal_verify.json")
+    parser.add_argument("--answer", default="", help="最终答案文件（run 目录内）；渲染报告前必须传，用于写入核验记录指纹")
+    parser.add_argument("--output", default="legal_verify.json", help="输出文件名（落到 --run 目录）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）")
     args = parser.parse_args()
 
     try:
-        claims = _items(_load(args.claims))
-        sources = _items(_load(args.sources))
-        profile = _load(args.profile)
+        claims = _items(_load(args.claims, args.run))
+        sources = _items(_load(args.sources, args.run))
+        profile = _load(args.profile, args.run)
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         print(f"输入不可读：{exc}", file=sys.stderr)
         return 1
     try:
-        answer = safe_read_path(args.answer).read_text(encoding="utf-8") if args.answer else ""
+        answer = safe_read_path(args.answer, args.run).read_text(encoding="utf-8") if args.answer else ""
     except (OSError, ValueError) as exc:
         print(f"答案不可读：{exc}", file=sys.stderr)
         return 1
     result = verify(claims, sources, profile, answer)
+    # 核验记录指纹：绑定核验当时的答案与证据；渲染侧据此检测“核验后改答案/补查后旧报告”。
+    from datetime import datetime
+    result["record"] = {
+        # 与渲染侧对齐（上游内核 extract_answer 会 strip 首尾空白）：指纹一律按去首尾空白后的答案计算
+        "answer_digest": trust_digest.answer_digest(answer.strip()) if answer else "",
+        "evidence_digest": trust_digest.evidence_digest(sources),
+        "verdict": result.get("verdict"),
+        "generated_at": datetime.now().isoformat(timespec="seconds"),
+    }
 
     try:
-        out = safe_write_path(args.output)
+        out = safe_write_path(args.output, args.run)
     except ValueError as exc:
         parser.error(str(exc))
-    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
     return 0 if result["verdict"] == "pass" else 1

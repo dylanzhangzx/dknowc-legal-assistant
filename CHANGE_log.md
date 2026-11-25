@@ -1,5 +1,40 @@
 # 变更记录
 
+## v1.0.4（2026-11-25，本地开发版本）
+
+### 内核单源化 + 两轨自验收（对齐上游「溯源核验报告生成器」1.0.2，Dylan 决策）
+
+- **内核整体继承上游**（消除手工移植漂移）：`render_trace_html.py` / `build_report_input.py`（新增）/ `trust_digest.py` / `chart_embed.py` / `run_paths.py`（新增）与上游同源；业务配置 `scripts/trace_report.config.json`（brand=深知法律助手、channels、agent_track、official_host_allow=[mpfa.org.hk]、verify required+compare_digests）。`path_guard.py` 保留供法律侧脚本（legal_search/verify_claims/source_cards/merge/websearch_convert/deliver_outputs）继续使用，内核统一走 `run_paths.py`。
+- **两轨自验收门禁**：报告合格 = 结构核验（脚本）∧ AI 验收（Agent 五项）。任一轨不过，渲染器打印原因后 `SystemExit(1)` 不生成 HTML——交付物只有"已核验"一种形态。脚本只判结构；内容判断全归 AI。上游 `tests/test_two_track.py` 62 项全过。
+- **工作流改两步**：`build_report_input.py --adapter merged` 把 `content.data.检索文章` 映射为通用 JSON（顺带嵌入 selfCheck/核验记录），渲染器只认通用 JSON；`--config scripts/trace_report.config.json` 必传。SKILL.md / answer-and-report.md / README 已同步。
+- **答案规范调整（Dylan 决策：弃用引用块展现）**：答案不再写 Markdown `>` 引用块（上游无此分支），结论挂角标、原文由「引用依据」弹窗/材料卡回看；`direct.quote` 逐字校验保留在 verify_claims。引文逐块比对（unmatched_quotes）随引用块退出；`--external-data` 外部数据行砍掉（LPR 等改写正文+角标挂来源材料）；`--no-trim-uncited` 裁剪开关随内核退出。
+- **指纹口径对齐**：`verify_claims.py` 的 answer 指纹改为按去首尾空白后的答案计算（上游 extract_answer 会 strip，避免假失效）；`source_cards.py` 的证据 id 优先取材料 `编号`（与答案角标/渲染侧 id 一致），否则回退 文章Id。
+- **旧版标注移到合并层**：上游材料卡无失效字段；`merge_search_results.py` 对带失效日期的材料在"核验"说明前置"旧版 · 失效于 …"，经 adapter 映射后卡片如实展示。
+- **通道名收敛**：legal_search 的 `检索通道` 写值收敛为「深知可信搜索 / 深知联网」（不再带 ·法律/·联网 后缀）；config `channels.tokens` 保留旧后缀值映射兜底，`internal_token_filter` 覆盖内部词（联网/宿主 WebSearch/阶段一~三/库内政策/政策档案全文/条款级召回/001-005）。
+- **上游内核自带**：official_host_allow 进 config、user_facing_text 单遍替换、材料类型退出报告（来源卡无类型标签、核验单无"材料构成"行）、来源等级（官方外部标「公开网络·官方」，全部第三方才提醒）、数字角标 + 引用弹窗、未引用材料折叠分区。
+- **注册通行码 + 宿主弹窗整改 + 发布检查登记门禁**：`register_key.mjs` 通行码通道（`agent-registration-key-send` + `X-MaaS-Registration-Key` 头；领题/legacy 保留、失效回落 `keyFallback`、限频停点；会话落盘 `maas_registration_session.json`）；状态清除不再 `unlinkSync`（写 0600 过期占位）；`genPassword` 改 `crypto.randomInt`；`check_release.py` 增加 `REGISTRATION_KEY_ALLOWED` 登记门禁与高熵长串拦截。
+- **文档**：SKILL.md（两轨自验收章：五要素/角标要素分挂/来源等级/材料类型退出/经验性统计归 AI；step7 结构化 selfCheck；step8 两步生成；交付底线同步）、answer-and-report.md（命令两步化、引用块规范移除、外部数据行移除）、verification-pass.md（复核结论直喂 AI 验收轨）、README、CHANGE_log。
+- **测试**：自有 144 项 unittest 全过（run 目录/指纹/两轨门禁/来源等级/契约/交付红线等，测试输入改为通用 JSON 口径）+ 上游通用套件 148 项检查全过（test_two_track 62、test_build_report_input 26、test_config_features 23、test_universal_input 30、test_run_paths 7）+ 注册通道 22 项检查。
+- **律所客户反馈落地**（金帅澎 2026-11-24 转述并经《律所需求场景讨论稿_深知法律助手_20261124.md》核对，Dylan 圈定 1/2/3/6/7/8-轻量；5 文书起草暂不做，4 OCR/外部服务另立项）：①案卷材料分支——SKILL.md 拆解步骤增加案卷事实提取（进问题画像 entities/facts）与争议焦点清单，案卷事实不作为法律依据材料；②要件对照表——复杂题答案必备章节（构成要件→事实→证据+角标→缺口），台账 claim 支持可选 `elements` 字段（示例入 legal_claims.example.json，verify_claims 兼容）；③争议焦点章节写入答案结构规范；④版本适用小结——跨期案件必备一段话；⑤隐私红线——案卷 PII 不得进检索 query，交付答案不得出现未脱敏 18 位身份证/11 位手机号，`check_answer.py` 新增 `scan_privacy` 硬检查（不可 absolute_review 放行）；⑥诉讼费速算——`calc_legal.py` 新增 `court-fee` 模式（《诉讼费用交纳办法》第十三条分段累计，`claim_amount`/`halved`，写回 `value`）。讨论稿核对后补齐四处：争点清单分层（主/次/可排除+理由/缺证据/需律师确认）、案卷题"材料清单与缺口"、服务调用可见性（降级/失败必须写进"说明与局限"，场景八 P0）、生效时间显式化（merge 层把"生效于 X"并入材料核验说明，场景六 P0）；页码级材料定位与案件级权限隔离记为宿主/部署层依赖，OCR 与文书起草另立项。
+- **状态**：本地开发与测试版本；版本号不升（内核同源化与客户反馈优化均在 1.0.4 内完成）；未封版、未提审、未发布、未合并资产库 main（等 Dylan 验收与发话）。
+
+## v1.0.3（2026-11-20）
+
+### 运行产物迁到会话 run 目录 + 报告核验两档
+
+- **run 目录**（对齐可信多引擎搜索 1.0.1）：新增 `scripts/path_guard.py` 的 run 目录守卫——`--run <目录>` 或 `DKNOWC_RUN_DIR`，**必须在 Skill 安装目录之外**；`legal_search.py` / `question_profile.py` / `source_cards.py` / `merge_search_results.py` / `websearch_convert.py` / `verify_claims.py` / `render_trace_html.py` / `deliver_outputs.py` 全部改走 run 目录；`legal_search`、`merge`、`websearch_convert` 写出的检索产物已存在时拒绝覆盖；`render` 输出仍在 run 目录内自动 `_v2` 另存。不再默认创建或写入 `official-docs/`。
+- **报告核验两档**：`compute_verification` 改为「硬错误 → 核验未通过 / 其余 → 已核验 + 待人工复核提醒」。硬错误：无来源、核心结论无角标、角标未绑定、结论台账校验未通过、正文仅非官方来源、交付前检查显式未通过、引用块在材料中找不到原文、核验记录缺失/失效。提醒级：摘录缺失、缺原文链接、外部材料混合、发布日期较早。报告标签统一为「已核验 / 核验未通过」两档。
+- **核验记录指纹**：新增 `scripts/trust_digest.py`；`verify_claims.py --answer` 落盘 `record`（answer/evidence digest）；`render_trace_html.py --verify-file` 比对——答案核验后被改过、材料补查/变更后复用旧报告，一律按「核验记录已失效，需重新核验」判未通过。
+- **claim_verified / 卡片状态**：来源卡新增「引用未通过核验」（仅硬错误）与「引用待核验」（无摘录，提醒级，不判未通过）；分节卡显示「本章引用 N 处 · X 条引用待核验」；未引用参考卡保持完整展示。
+- **摘录不顶替**：被引用材料一段都匹配不上时清空展示（显示“未匹配到可比对摘录，引用待核验”），不再整篇保留、不拿首段顶替；未引用参考卡不受裁剪影响。
+- **表格完整性**：`websearch_convert.py` 先摘出 `<table>…</table>` 整块、清洗后整块还原（最小标签清洗），表格不参与按标点切分与 1200 字分段；普通文本摘要仍按上限截断。
+- **报告界面形态**（2026-11-20，对齐可信多引擎搜索 1.0.1）：正文行内引用只保留一个可点击数字角标 `[n]`，点击弹出「引用依据」弹窗（弹窗内是该材料卡：原文链接、标题链、被引段落）；正文不再渲染「编号徽章 + 材料标题」胶囊，也不再内联展开整段引文。表格单元格内的角标与正文同形态，删除单独的「表内依据」出处行。知识专库的未进入正文材料移入可折叠分区「未进入正文的参考材料（N）」，与正文依据分开；材料卡圆角 14、内边距 18/20。打印时角标按 `[n]` 纯文本输出，弹窗与遮罩不打印。
+- **交付红线**：`deliver_outputs.py` 交付源必须位于 run 目录、只允许 .html/.htm；`outputs/` 只放 HTML，禁止复制 `answer.md` 等中间 Markdown。
+- **文档**：SKILL.md（run 目录步骤、两档口径、`--verify-file` 必传）、answer-and-report.md（命令与交付）、capability-layer.md、retrieval-v2/statute、tags、verification-pass、README 同步。
+- **测试**：新增 `tests/test_trust_fixes.py`（27 项：run 目录守卫、指纹失效、两档状态、claim_verified、摘录不顶替、表格完整性、交付红线、角标弹窗/未引用分区/表格角标）；全量 133 项通过。
+- **状态**：本地开发与测试版本；未打包送审、未发布、未合并资产库 main（按指示等 Dylan 验收）。
+
+
 ## v1.0.2（2026-11-11，开发中，未封版）
 
 ### 计算台账补纯算术能力

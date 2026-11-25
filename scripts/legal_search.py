@@ -728,7 +728,7 @@ def build_statute_article(resolved: Resolved, segments: List[Tuple[str, str]]) -
             f"原文含最新修正日 {resolved.marker}" if resolved.marker
             else "原文取自库内全文"
         ),
-        "检索通道": "深知可信搜索·法律",
+        "检索通道": "深知可信搜索",
         "检索类型": "legal-statute",
         "段落": [
             {
@@ -742,7 +742,7 @@ def build_statute_article(resolved: Resolved, segments: List[Tuple[str, str]]) -
     }
 
 
-def build_semantic_articles(body: Dict[str, Any], channel_label: str = "深知可信搜索·法律") -> List[Dict[str, Any]]:
+def build_semantic_articles(body: Dict[str, Any], channel_label: str = "深知可信搜索") -> List[Dict[str, Any]]:
     data = (body.get("content") or {}).get("data") or {}
     articles = [x for x in (data.get("检索文章") or []) if isinstance(x, dict)]
     for article in articles:
@@ -807,18 +807,13 @@ def output_body(query: str, ref: str, articles: List[Dict[str, Any]], legal_meta
     return body
 
 
-def resolve_output_path(name: str) -> Path:
-    path = Path(name)
-    if path.is_absolute():
-        raise client.LegalApiError("output", "--output 只接受 official-docs/search-results/ 下的文件名")
-    if path.parent in (Path("."), Path("")):
-        path = RESULTS_DIR / path
-    else:
-        path = SKILL_ROOT / path
-    resolved = path.resolve()
-    if RESULTS_DIR.resolve() not in resolved.parents and resolved.parent != RESULTS_DIR.resolve():
-        raise client.LegalApiError("output", "--output 必须位于 official-docs/search-results/ 内")
-    return resolved
+def resolve_output_path(name: str, run: str | None = None) -> Path:
+    """结果 JSON 写入会话 run 目录（--run / DKNOWC_RUN_DIR），拒绝写入 Skill 安装目录。"""
+    from path_guard import safe_write_path
+    try:
+        return safe_write_path(name, run)
+    except ValueError as exc:
+        raise client.LegalApiError("output", str(exc)) from None
 
 
 # ---------- 主流程 ----------
@@ -955,7 +950,7 @@ def run(args: argparse.Namespace) -> Dict[str, Any]:
               file=sys.stderr)
     articles = build_semantic_articles(
         body,
-        channel_label="深知可信搜索·联网" if search_channel == "webSearch" else "深知可信搜索·法律",
+        channel_label="深知联网" if search_channel == "webSearch" else "深知可信搜索",
     )
     # 校验返回的文件标签是否都在目录里（目录外标签说明数据侧有一致性问题）
     tag_unknown = []
@@ -996,10 +991,29 @@ def main() -> None:
     parser.add_argument("--search-channel", default="", help="V2 检索通道（阶段二）：库内无果/支撑不足时传 webSearch，走深知联网检索；返回材料由报告标「非官方来源」")
     parser.add_argument("--max-copies", type=int, default=4, help="选本下载副本的上限（默认 4）；命中合格副本即提前停止，正常只下 1-2 份")
     parser.add_argument("--reference-date", default="", help="按该日期选取当时有效的版本（YYYY-MM-DD）；跨期/旧法问题必传，不传取最新版")
-    parser.add_argument("--output", "-o", help="结果 JSON 文件名（写入 official-docs/search-results/）")
+    parser.add_argument("--output", "-o", help="结果 JSON 文件名（落到 --run 目录）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）；写 --output 时必填")
     parser.add_argument("--json-only", action="store_true", help="仅输出 JSON")
     parser.add_argument("--timeout", type=int, default=90, help="单次请求超时秒数（默认 90）")
     args = parser.parse_args()
+
+    # 先解析并检查落盘目标，再发请求：避免先花时间检索、后因路径/覆盖被拒。
+    out_path = None
+    if args.output:
+        try:
+            out_path = resolve_output_path(args.output, args.run)
+        except client.LegalApiError as exc:
+            print(json.dumps({
+                "status": "error", "stage": exc.stage, "message": str(exc),
+            }, ensure_ascii=False, indent=2), file=sys.stderr)
+            sys.exit(1)
+        if out_path.exists():
+            print(json.dumps({
+                "status": "error", "stage": "output",
+                "message": f"输出文件已存在，拒绝覆盖：{out_path}\n"
+                           "重复/并行运行请换一个 --run 目录，或换一个 --output 文件名。",
+            }, ensure_ascii=False, indent=2), file=sys.stderr)
+            sys.exit(1)
 
     try:
         body = run(args)
@@ -1026,9 +1040,8 @@ def main() -> None:
         )
 
     raw = json.dumps(body, ensure_ascii=False, indent=2)
-    if args.output:
-        path = resolve_output_path(args.output)
-        path.parent.mkdir(parents=True, exist_ok=True)
+    if args.output and out_path is not None:
+        path = out_path
         path.write_text(raw, encoding="utf-8")
         print(f"已保存法律检索 JSON：{path}")
         if not args.json_only:

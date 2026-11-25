@@ -58,8 +58,9 @@ python3 {baseDir}/scripts/legal_search.py \
 
 ```bash
 python3 {baseDir}/scripts/merge_search_results.py \
-  --input official-docs/search-results/legal_labor.json \
-  --input official-docs/search-results/legal_labor_regulation.json \
+  --run <run> \
+  --input legal_labor.json \
+  --input legal_labor_regulation.json \
   --search-key "劳动合同法" \
   --search-key "劳动合同法实施条例" \
   --output legal_merged.json

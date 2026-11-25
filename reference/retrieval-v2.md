@@ -74,7 +74,7 @@
 
 1. **用户点名文件全名/文号时，必须先用 `--law "文件全名"` 走 001**；V2 返回 0 条不等于库内没有。脚本会下载全文；如果没有“第X条”，自动返回一个 `正文` 材料（`检索类型=legal-policy-fulltext`），不再报“未能切出目标条文”。
 2. 用 `--law "文件全名" --keywords "关键词"` 时，若无条标题，也会回退全文；引用时按文件里的“一、（一）”章节定位，不要编条号。
-3. 001 也找不到，或命中的是旧版/同名地方文件时，再走阶段二/三 WebSearch；外部材料内部标 `非官方来源=True`，报告用户可见标签为“外部公开材料 · 来源性质”。
+3. 001 也找不到，或命中的是旧版/同名地方文件时，再走阶段二/三 WebSearch；外部材料内部标 `非官方来源=True`，报告徽标按来源等级展示（政府域名/官方机构「公开网络·官方」，其余「非官方来源」）。
 4. **“最新/2026/现行”是版本敏感信号**：库内文件日期明显早于问题日期时，不能把库内旧版当现行；必须 WebSearch 核对是否有新文。报告里写清“库内为某日期版本、外部为新版”，再决定用哪版。
 
 反例（2026-11-10 实测）：
@@ -97,7 +97,7 @@ python3 {baseDir}/scripts/legal_search.py \
 
 **阶段三：宿主 WebSearch**
 
-宿主 WebSearch 原始结果先落 `official-docs/search-results/legal_websearch_raw.json`，再转换：
+宿主 WebSearch 原始结果先落 `<run>/legal_websearch_raw.json`，再转换（`--run <run>`）：
 
 ```bash
 python3 {baseDir}/scripts/websearch_convert.py legal_websearch_raw.json \
@@ -121,7 +121,7 @@ python3 {baseDir}/scripts/legal_search.py \
   --output legal_q1_v2.json
 ```
 
-- `--output` 只能写 `official-docs/search-results/` 下的文件名
+- `--output` 写 `--run` 目录下的文件名；目标已存在会拒绝（换文件名或换 run 目录）
 - 落盘后 `json.load` 校验 `content.data.检索文章`；0 条也要落盘并在研究资料中记录
 
 ## 已知限制（不要据此改查询绕行）

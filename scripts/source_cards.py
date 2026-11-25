@@ -254,7 +254,7 @@ def build_cards(payload: Any, question_jurisdiction: str = "", as_of: str = "") 
         as_of_iso = _norm_date(as_of)
         is_expired = bool(expired_iso and as_of_iso and expired_iso < as_of_iso)
         cards.append({
-            "id": str(item.get("文章Id") or f"s{idx}"),
+            "id": str(item.get("编号") or item.get("文章Id") or f"s{idx}"),
             "title": _first(item, "文章标题", "标题"),
             "issuer": _first(item, "发布或实施机构", "发布机关"),
             "jurisdiction": jurisdiction,
@@ -287,30 +287,30 @@ def build_cards(payload: Any, question_jurisdiction: str = "", as_of: str = "") 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="生成材料画像 source cards")
-    parser.add_argument("--input", required=True, help="检索结果 JSON")
-    parser.add_argument("--profile", help="问题画像 JSON（读取 jurisdiction）")
-    parser.add_argument("--output", default="legal_source_cards.json", help="输出文件名")
+    parser.add_argument("--input", required=True, help="检索结果 JSON（run 目录内）")
+    parser.add_argument("--profile", help="问题画像 JSON（run 目录内，读取 jurisdiction/as_of）")
+    parser.add_argument("--output", default="legal_source_cards.json", help="输出文件名（落到 --run 目录）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）")
     args = parser.parse_args()
 
     try:
-        payload = json.loads(safe_read_path(args.input).read_text(encoding="utf-8"))
+        payload = json.loads(safe_read_path(args.input, args.run).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError, ValueError) as exc:
         parser.error(f"输入不可读：{exc}")
     question_jurisdiction = ""
     as_of = ""
     if args.profile:
         try:
-            profile = json.loads(safe_read_path(args.profile).read_text(encoding="utf-8"))
+            profile = json.loads(safe_read_path(args.profile, args.run).read_text(encoding="utf-8"))
             question_jurisdiction = str(profile.get("jurisdiction") or "")
             as_of = str(profile.get("as_of") or "")
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"profile 不可读：{exc}")
 
     try:
-        out = safe_write_path(args.output)
+        out = safe_write_path(args.output, args.run)
     except ValueError as exc:
         parser.error(str(exc))
-    out.parent.mkdir(parents=True, exist_ok=True)
     result = build_cards(payload, question_jurisdiction, as_of)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(out), "sources": len(result["sources"])}, ensure_ascii=False, indent=2))

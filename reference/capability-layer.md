@@ -16,7 +16,7 @@ legal_verify.json                 通用校验（地域/时间/来源等级/引�
 legal_answer.txt → HTML
 ```
 
-三个新脚本的 `--input/--profile/--answer` 只能读 skill 目录内文件；`--output` 只能写 `official-docs/search-results/`。越界路径直接拒绝。
+三个新脚本的 `--input/--profile/--answer` 读 skill 目录或会话 run 目录内文件；`--output` 只能写 `--run` 指定的会话 run 目录（或 `DKNOWC_RUN_DIR`）。**Skill 安装目录被直接拒绝**；不指定 run 目录时报错并给出用法，不落任何文件。
 
 ## 1. 问题画像
 

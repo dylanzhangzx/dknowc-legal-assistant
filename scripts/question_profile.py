@@ -180,13 +180,14 @@ def main() -> int:
     parser.add_argument("--question", help="用户原始问题")
     parser.add_argument("--as-of", default="", help="截至日期 YYYY-MM-DD")
     parser.add_argument("--jurisdiction", default="", help="问题地域，如“福建省泉州市安溪县”")
-    parser.add_argument("--input", help="已有 profile JSON，校验并规范化")
-    parser.add_argument("--output", default="legal_question_profile.json", help="输出文件名")
+    parser.add_argument("--input", help="已有 profile JSON（run 目录内），校验并规范化")
+    parser.add_argument("--output", default="legal_question_profile.json", help="输出文件名（落到 --run 目录）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）")
     args = parser.parse_args()
 
     if args.input:
         try:
-            profile = json.loads(safe_read_path(args.input).read_text(encoding="utf-8"))
+            profile = json.loads(safe_read_path(args.input, args.run).read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError, ValueError) as exc:
             parser.error(f"profile 不可读：{exc}")
     else:
@@ -202,10 +203,9 @@ def main() -> int:
         return 1
 
     try:
-        out = safe_write_path(args.output)
+        out = safe_write_path(args.output, args.run)
     except ValueError as exc:
         parser.error(str(exc))
-    out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(out), "profile": profile}, ensure_ascii=False, indent=2))
     return 0

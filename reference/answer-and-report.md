@@ -2,7 +2,8 @@
 
 ## 一、参数与文件纪律
 
-- `legal_search.py --output` 只能写 `official-docs/search-results/` 下的文件名，禁止工作区路径
+- **运行产物一律写会话 run 目录**：本次任务先定 `--run <会话工作区独立目录>`（或设 `DKNOWC_RUN_DIR`），检索 JSON、画像、台账、校验记录、报告全部写这里；**禁止写 Skill 安装目录**（脚本会拒绝），`official-docs/` 不再用于运行产物
+- `legal_search.py --output` / `merge_search_results.py -o` / `websearch_convert.py -o` 写的是 run 目录下的**文件名**；目标文件已存在会拒绝（换文件名或换 run 目录，别覆盖上一轮）
 - 每次接口返回立即落盘；落盘后 `json.load` 校验 `content.data.检索文章`（0 条也要落盘并记录）
 - 重复测试用任务短标识命名：`legal_<任务>_question.txt` / `_answer.txt` / `_selfcheck.json`；固定文件名在部分宿主可能因 Write 规则写入失败
 - 研究资料里的检索次数按落盘文件数写，不凭印象；写“已跑 N 次”前先 `ls` 一遍结果文件
@@ -10,7 +11,7 @@
 
 ## 一之二、先写结论台账（claim ledger）
 
-先按 `{baseDir}/reference/capability-layer.md` 生成问题画像 `legal_question_profile.json` 和材料画像 `legal_source_cards.json`；写答案前再落盘 `official-docs/search-results/legal_claims.json`。每个要写进答案的结论先登记类型、来源、地域、时点和口径；答案只能从台账里写，台账外的概括句先删或补检索。
+先按 `{baseDir}/reference/capability-layer.md` 生成问题画像 `legal_question_profile.json` 和材料画像 `legal_source_cards.json`；写答案前再落盘 `<run>/legal_claims.json`。每个要写进答案的结论先登记类型、来源、地域、时点和口径；答案只能从台账里写，台账外的概括句先删或补检索。
 
 ```json
 [
@@ -66,7 +67,7 @@
 - `direct`：条文/文件原文直接支持。带 `count` 的，必须按 `quote` 里的（一）（二）……逐项数；数量对不上直接判不合格。
 - `calculation`：分两种，都必须先跑脚本、把输出原样写进答案，不得心算。
   - 日期/利息：用 `scripts/calc_period.py`，台账带 `tool=calc_period.py`、`convention`、`start/end/principal/annual_rate`，写回 `days/interest`；合计类用 `aggregate_of` 指向分项 claim。
-  - 纯算术（经济补偿年限折算、年假 300%、比例/倍数、封顶）：用 `scripts/calc_legal.py`，台账带 `tool=calc_legal.py`、`mode`、`inputs`，写回 `amount/months_factor/total/additional/value` 中至少一项。经济补偿用 `mode=severance`，`inputs` 写 `monthly_wage/years/months`（月数 0-11），脚本按“满年 + 满 6 个月按 1 年 + 不满 6 个月按 0.5”算折算月数；已触发三倍社平封顶时再传 `capped_wage`，脚本按 12 年封顶。
+  - 纯算术（经济补偿年限折算、年假 300%、比例/倍数、封顶）：用 `scripts/calc_legal.py`，台账带 `tool=calc_legal.py`、`mode`、`inputs`，写回 `amount/months_factor/total/additional/value` 中至少一项。经济补偿用 `mode=severance`，`inputs` 写 `monthly_wage/years/months`（月数 0-11），脚本按“满年 + 满 6 个月按 1 年 + 不满 6 个月按 0.5”算折算月数；已触发三倍社平封顶时再传 `capped_wage`，脚本按 12 年封顶。 诉讼费速算用 `mode=court-fee`，`inputs` 写 `claim_amount`（可加 `halved: true` 按简易程序/调解减半），《诉讼费用交纳办法》第十三条分段累计，结果写回 `value`。
 - `negative`：只能写“截至YYYY-MM-DD，公开渠道未见/未检索到……”，不能写“未上调/未发生/不存在”；必须记录 `coverage`（查了哪些渠道）。
 - `inference`：从定义、原则推到具体对象/业态的结论。必须写“通常/一般/以属地……认定为准”，不能写“属于/就是”。
 - `external`：外部公开数值/事实。必须写 `source_nature`（政府网站/官方媒体/次级媒体/未知；无法判断写“未知”，不要合并成“次级媒体/未知”）、`as_of`、`jurisdiction`（来源地域）和 `question_jurisdiction`（问题地域）；两者不一致且都不是“全国/国家”时不得使用。只有次级媒体或未知来源时，必须同时写 `official_value` 或“未见正式文件、待核验”的 `wording`，不能把媒体数值直接当第一结论。
@@ -74,20 +75,18 @@
 - **`answer_anchor`**：每条要进答案的 claim 建议写一个“答案锚点”（如“官方公开口径仍为190元/月”）。答案里的强断言（确有/已经/属于/已上调/已执行/已补发）必须能匹配某个锚点或带 `[n]` 角标；否则就是台账外句子。
 - **`mixed_sources`**：一条 claim 同时引政府网站和媒体转引时，必须拆 claim，或写 `mixed_sources` 说明“政府网站是哪几条、次级媒体是哪几条”；不能整体标成“政府网站”。
 
-模板见 `{baseDir}/reference/legal_claims.example.json`；实际文件写到 `official-docs/search-results/legal_claims.json`。
+模板见 `{baseDir}/reference/legal_claims.example.json`；实际文件写到 `<run>/legal_claims.json`。
 
 ## 二、答案与引用规范
 
+- **章节结构（律所反馈 2026-11-25 定稿）**：案情较复杂（多争点/多要件/跨期）时，答案按此顺序组织：①**材料清单与缺口**（复杂案卷题必备：已纳入的材料几件、缺失的关键材料是什么）；②争议焦点——分**主争点 / 次争点 / 可排除观点（写明排除理由）/ 缺证据事项**，另列“需律师确认的关键问题”；③逐争点分析；④**要件对照表**（构成要件 → 对应事实 → 证据材料+角标 → 适用/不适用/待查；不满足的写“缺口”，不许含糊，缺事实就追问、不许补造）；⑤结论；⑥**版本适用小结**（跨期案件必备：哪段时间的行为适用哪部法的哪个版本，一段话说清）；⑦**说明与局限**（服务降级/失败、数据口径不确定、待核验项）。简单题不必强套，但要件对照表在涉及构成要件判断（解除合法性、赔偿成立、时效）时必备。
 - 法条引用格式：`《中华人民共和国劳动合同法》第四十七条（2012年修正）[1]`
 - 标注机构时的写法（2026-11-13 统一）：政策依据写“发文机构：XX”，数据支撑/参考案例写“来源：XX”；不使用“数据源：XX”。“数据源”是抓取站点，不是发文机关，不进正文。
-- 条文原文用 Markdown `>` 引用块，不要用 HTML `<blockquote>`，也不要把 `>` 写在段落中间
-- 引用内容必须与材料段落逐字一致；允许省略号，但不得改写条件、数字、主体、期限
-- **引用块只能放材料里能逐字找到的原文**：找不到就转述并注明依据，或删掉。渲染器会逐块比对，找不到原文的引用块会被标“未在材料中找到该句原文”，报告判核验未通过
-- 落引用块前，把要引的句子前 10 个字在本次 JSON 里 grep 一遍；标准条文“记得很熟”不是免检理由
-- 同条有但书/例外/第二款的，必须一并纳入，不得只取前半句
+- **答案里不抄条文原文**（1.0.4 随上游内核调整）：结论写清、挂角标即可，用户点角标在「引用依据」弹窗/材料卡回看条文原文——原文从检索结果直接渲染，不存在"模型抄错一个字"的风险。不要再写 Markdown `>` 引用块（上游渲染器无此分支，会按普通段落渲染出字面 `>`）
+- 逐字核对的要求没有消失，而是移到了引用发生前：台账 `direct.quote` 必须与材料段落逐字一致（verify_claims 校验）；同条有但书/例外/第二款的，结论必须一并覆盖，不得只取前半句
 - 涉及金额、比例、期限、倍数、责任主体时，同条限定语必须写出（如“月工资高于……三倍”“最高不超过十二年”）
 - **带序号的条文数量必须数原文**：写“第X条共N项/款”前，把所引原文的（一）（二）……逐项数一遍，不得凭记忆写数量。高频错误：现行《消防法》第十六条为七项（2021年修正增加第七项兜底），不是旧版的六项。自检 `fact_basis`/`no_gap` 要写明“第X条共N项已逐项核对”。
-- **引用块外的概括句也要能回到台账**：引用块逐字一致不等于概括句正确。数量、主体、范围、否定结论必须回到 `legal_claims.json`；台账里没有的概括句先删或补检索。
+- **每个概括句都要能回到台账**：数量、主体、范围、否定结论必须回到 `legal_claims.json`；台账里没有的概括句先删或补检索。
 - 多个依据分别挂角标，不要合并成一个 `[1][2]` 挂在句尾
 - 找不到条文原文：先换法律名/条号重试，再走语义补搜；仍无则写“未检索到直接条文依据，待核验”
 - **“待核验”前必须补搜**：要写“未取到/待核验”的条号，必须实际跑过一次检索并落盘
@@ -120,13 +119,18 @@
 
 - 法律依据以深知接口为主；公开经济数据（LPR、汇率、统计口径）允许通过阶段二/三 WebSearch 核取，但必须登记来源与日期
 - 没有可靠来源的数字不写；**模型记忆不算来源**
-- 外部数据不挂法条角标，报告单列“外部数据”，不计入依据溯源/引用对应
-- 外部网页材料（阶段二/三）由 `websearch_convert.py` 转换后带 `非官方来源=True`（含义：非深知库内材料）、`来源通道=外部联网`、`来源性质=政府网站/官方媒体/次级媒体`；报告用户可见标签为“外部公开材料 · 来源性质”，不再把政府网站叫“非官方来源”。外部材料与库内材料一样参与 AI 核验、可挂角标，由用户根据来源性质判断；法条原文/司法解释/时效/适用范围仍优先使用深知原文
+- **外部数据不再单列"外部数据"行**（1.0.4 随上游内核砍掉 `--external-data`）：这类数据写成正文结论 + 角标，角标挂到载有该数值的外部材料上（LPR 挂公布页/报道页材料），由用户点角标回看来源
+- 外部网页材料（阶段二/三）由 `websearch_convert.py` 转换后带 `非官方来源=True`（含义：非深知库内材料）；报告徽标按来源等级展示——政府域名/官方机构「公开网络·官方」，其余「非官方来源」。外部材料与库内材料一样参与 AI 核验、可挂角标；法条原文/司法解释/时效/适用范围仍优先使用深知原文
 - **“没检索到”只能写成检索结论**：写“截至YYYY-MM-DD，公开渠道未见……”，不得写成“未发生/未上调/不存在”；转引报道写“据X转引Y”，不得称为“直接依据/原文”。否定性结论必须在 claim 台账里登记 `as_of`、`coverage`、`wording`。
 - **外部材料要区分来源性质**：政府网站、官方媒体、次级媒体转引分开记录；内部 `非官方来源=True` 仍保留，但报告显示“外部公开材料 · 来源性质”；答案里要写清“据哪个机构/哪篇报道转引”，不能把媒体转述当成文件原文。
 - **只有媒体转述、没有正式文件时，不能把媒体数值当第一结论**：先写官方现行口径（如官网/正式文件），再写“有媒体报道称……未见正式文件，待核验”；不得用“负责人表示”直接替代“依据哪个文件”。
 - **外部材料地域必须与问题地域一致**：省级问题不能用外省报道；全国口径可以用，但要写“全国”。材料标题/来源出现“河北/河北日报/河北省政协”等外省标识时，必须停下核对，不得把外省数值套到本省。
-- 落盘 `legal_<任务>_external.json`：`名称`、`数值`、`来源`、`公布日期`、`链接`、`说明`；渲染时 `--external-data` 传入
+- LPR 等数据同样落材料（websearch_convert 转换后进 merge），答案写数值时挂该材料角标；来源与公布日期写在答案句内（如"2026-10-20 公布的 1 年期 LPR 3.0%[3]"）
+
+### 隐私脱敏（硬检查）
+
+- 案卷里的当事人姓名、身份证号、手机号、住址**不进检索 query**（检索只用法律要件、金额区间、品类词），也**不进交付答案**；必须提及时用脱敏形式（张某某；身份证前 6 位+星号；手机号前 3 位+星号+后 4 位）
+- `check_answer.py` 会扫描未脱敏的 18 位身份证号 / 11 位手机号，命中即硬错误，不能用 `absolute_review` 放行；案号、金额、日期不受限
 
 ## 五、自检五项（写入 legal_selfcheck.json）
 
@@ -138,31 +142,34 @@
 | `freshness` | 引用的是与问题对应的法律文本；不评价数据层版本状态 |
 | `no_gap` | 同条但书/例外/分款已核对；未核验项已补搜或标注；算例已复核（含天数口径）；外部检索结论已带截止日期；原文与解释已分开；绝对化表述已做反例检查 |
 
-- 五项的值必须以“通过：原因”或“未通过：原因”开头；只写描述性文字会被渲染器记为“未记录”（报告会出现“通过，5 项未记录”）
+- **结构化契约（1.0.4，两轨自验收）**：每项写成 `{"verdict": "pass|fail|pending", "basis": "怎么判的", "evidence": ["可回查证据", …]}`；旧字符串写法（“通过：原因”）兼容。**声明"通过"必须带可回查证据**——`[n]`／`第X条`／〔20xx〕文号／日期／年份／文件名／GB 标准号任一；声明通过但证据里没有这些要素，渲染器按 evidence_missing 拦截，不出报告。`fail` 直接否决；`pending` 只作待人工复核提醒，不阻断交付
 - `fact_basis` 要覆盖答案里的每一条法律判断，包括竞业限制、奖金、报销等旁支；旁支没有条文依据时，正文标“按协议/按通常口径”，不要写成法律结论
 - 自检说明不写接口字段名、枚举、布尔值、内部文件名、文章 ID
-- 自检说明不写材料编号（`[1]`、“材料 3”），用“《法名》第X条挂在载有该条的全文材料”描述
-- 自检说明不写引用块数、材料数、检索次数，由报告自动统计；但条文本身的项数（“第X条共N项”）必须写明，这是核对项，不是统计项
+- 自检说明/证据里**优先用可回查要素**：材料编号 `[n]`、条款号、文号、日期都是有效证据；描述成“《法名》第X条挂在载有该条的全文材料”也可以，但要带得上条号或文号
+- 自检说明不写材料数、检索次数，由报告自动统计；但条文本身的项数（“第X条共N项”）必须写明，这是核对项，不是统计项
 - 答案正文不写“版本与核验说明”整段；税务、行业惯例等非条文口径就地标“按通常口径”
 
 ### 措辞检查（生成报告前强制）
 
 ```bash
 python3 {baseDir}/scripts/verify_claims.py \
-  --claims official-docs/search-results/legal_claims.json \
-  --sources official-docs/search-results/legal_source_cards.json \
-  --profile official-docs/search-results/legal_question_profile.json \
-  --answer official-docs/search-results/legal_answer.txt \
-  --output official-docs/search-results/legal_verify.json
+  --run <run> \
+  --claims legal_claims.json \
+  --sources legal_source_cards.json \
+  --profile legal_question_profile.json \
+  --answer legal_answer.txt \
+  --output legal_verify.json
 
 python3 {baseDir}/scripts/check_answer.py \
-  --answer official-docs/search-results/legal_answer.txt \
-  --selfcheck official-docs/search-results/legal_selfcheck.json \
-  --claims official-docs/search-results/legal_claims.json \
-  --materials official-docs/search-results/legal_search.json
+  --answer <run>/legal_answer.txt \
+  --selfcheck <run>/legal_selfcheck.json \
+  --claims <run>/legal_claims.json \
+  --materials <run>/legal_search.json
 ```
 
-- 扫描两类问题：①“只能/唯一/一定/一旦/就没了/一并被覆盖/性质变成违法解除”等绝对化措辞；②“累计工作”“缴至”等未注明假设的表述。引用块与代码块内不算
+- `verify_claims.py` 必须带 `--answer`：它把答案指纹（answer_digest）和证据指纹（evidence_digest）写进 `legal_verify.json` 的 `record`，渲染时据此判定「核验记录已失效」。不带 `--answer` 或核验后改了答案/补查了材料，报告一律按「核验未通过」出。
+
+- 扫描两类问题：①“只能/唯一/一定/一旦/就没了/一并被覆盖/性质变成违法解除”等绝对化措辞；②“累计工作”“缴至”等未注明假设的表述。代码块内不算
 - 结论台账检查：`direct` 的 `count` 与 `quote` 枚举数不一致、`direct.quote` 在材料中找不到、`negative` 缺 `as_of/coverage/wording`、`inference` 缺限定措辞、`external` 缺 `source_nature/as_of` 或次级媒体缺 `official_value/待核验`、`direct` 缺 `source_ids`、`calculation` 的 `tool` 非法、`calc_period.py` 缺 `convention` 或 `start/end/principal/annual_rate`/`aggregate_of`、`calc_legal.py` 缺 `mode/inputs` 或结果对不上、`mixed_sources` 不说明政府网站与次级媒体，均判不合格
 - 另有句式检查：条件 + 后果（如“一旦……就会……”“程序不成立就……违法……”），同义改写也会命中
 - 有命中项时：优先改写为带条件/例外的表述；确属事实描述或条文封闭列举的，在 `legal_selfcheck.json` 的 `absolute_review` 里**按行号**逐条说明：
@@ -175,26 +182,40 @@ python3 {baseDir}/scripts/check_answer.py \
 ## 六、生成报告
 
 ```bash
+# ① 检索/合并产物 → 通用 JSON（渲染器只认通用 JSON）
+python3 {baseDir}/scripts/build_report_input.py \
+  --run <run> \
+  legal_merged.json --adapter merged \
+  --answer-file legal_answer.txt \
+  --question "用户的原始问题全文" \
+  --self-check-file legal_selfcheck.json \
+  --verify-file legal_verify.json \
+  --output report_input.json
+
+# ② 渲染单文件 HTML
 python3 {baseDir}/scripts/render_trace_html.py \
-  official-docs/search-results/legal_labor_47.json \
-  --answer-file official-docs/search-results/legal_answer.txt \
-  --self-check-file official-docs/search-results/legal_selfcheck.json \
-  --question-file official-docs/search-results/legal_question.txt \
-  --research-notes-file official-docs/search-results/legal_research_notes.md \
+  --run <run> \
+  --config {baseDir}/scripts/trace_report.config.json \
+  report_input.json \
+  --research-notes-file legal_research_notes.md \
   --output "劳动合同法第四十七条经济补偿标准.html"
 ```
 
-- 有外部数据时加 `--external-data official-docs/search-results/legal_<任务>_external.json`
-- 输出在 `official-docs/output/`，同题重跑自动 `_v2` 另存
+- **两步缺一不可**：渲染器不再直读检索/merge 产物；`build_report_input.py --adapter merged` 负责把 `content.data.检索文章` 映射为通用材料，并顺带把 selfCheck/核验记录嵌入
+- **`--verify-file` 必传**（在①中传入）：报告核验状态由「渲染期真实核验 + 结论台账校验记录 + answer/evidence 指纹」共同计算；没传或指纹对不上，渲染器直接拒绝出报告
+- **`--config` 必传**（在②中传入）：品牌、通道词、agent_track、来源等级白名单都在 `scripts/trace_report.config.json`
+- 输出写在 `--run` 目录内；内部重跑覆盖同名文件，交付版本编号由交付脚本决定
+- **两轨自验收，不合格不出报告（1.0.4）**：报告合格 = 结构核验（脚本）∧ AI 验收（五项自检）。任一轨不过，渲染器打印原因后直接退出、**不生成 HTML**——交付物只有“已核验”一种形态。脚本只判结构：角标全绑、每条正文依据有可展开摘录、结论台账 verdict=pass、核验记录指纹有效、自检"通过"须带可回查证据；金额/对象/地域/时效/措辞/经验性统计等内容判断全部归 AI 验收。缺原文链接、时效较早、部分第三方公开材料、`pending` 项只进“待人工复核提醒”，不改变结论
 - 生成前硬校验：材料非空而答案无 `[n]` 时拒绝生成
-- 默认只展示被正文引用的段落；需全部展示时加 `--no-trim-uncited`
 
 ## 七、交付
 
 ```bash
-python3 {baseDir}/scripts/deliver_outputs.py <本次产出的HTML绝对路径>
+python3 {baseDir}/scripts/deliver_outputs.py --run <run> <本次产出的HTML绝对路径>
 ```
 
+- 交付源必须是 run 目录里的 HTML；`outputs/` 只放这份 HTML，**不复制 `answer.md`、中间 Markdown/TXT，不得把 .md 当交付物展示**
 - 不要 `cd` 到 skill 目录，用绝对路径运行
 - 返回 `need_dest=true` 时用 `--dest <工作区目录>` 重跑
 - 回复中给出 delivered 路径 + 核心结论
+

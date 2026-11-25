@@ -48,7 +48,9 @@ scripts/
   verify_claims.py           结论图通用校验（地域/引文/计算/冲突）
   check_answer.py            措辞检查 + 结论台账硬检查
   websearch_convert.py       宿主 WebSearch 结果转统一材料形态（外部公开材料/来源性质）
-  render_trace_html.py       单文件溯源核验报告渲染器
+  render_trace_html.py       单文件溯源核验报告渲染器（上游单源内核）
+  build_report_input.py      检索/合并产物 → 通用 JSON 入口适配
+  run_paths.py               运行目录与产物路径（内核共用）
   merge_search_results.py    多路结果合并（多法/多条号）
   deliver_outputs.py         宿主工作区交付
   register_key.mjs           手机号验证码注册/查回 Key
@@ -56,8 +58,7 @@ scripts/
 reference/                   开通引导、结论台账模板、独立复核提示词等
 tests/                       回归测试（计算口径、结论台账、来源行）
 resources/                   离线 ECharts（图表并入报告时使用）
-official-docs/search-results 检索中间产物
-official-docs/output         最终 HTML 产出物
+会话工作区 run 目录（--run）  检索产物、画像、台账、校验记录与最终 HTML（不写 Skill 安装目录）
 ```
 
 ## 快速开始
@@ -76,11 +77,18 @@ python3 scripts/legal_search.py \
   --articles 38,39,40,41,46,47,48,87 \
   --output legal_labor_multi.json
 
+python3 scripts/build_report_input.py \
+  --run ./runs/20261120-legal-01 legal_labor_multi.json --adapter merged \
+  --answer-file legal_answer.txt \
+  --question "劳动合同法第四十七条经济补偿的计算标准" \
+  --self-check-file legal_selfcheck.json \
+  --verify-file legal_verify.json \
+  --output report_input.json
+
 python3 scripts/render_trace_html.py \
-  official-docs/search-results/legal_labor_47.json \
-  --answer-file official-docs/search-results/legal_answer.txt \
-  --self-check-file official-docs/search-results/legal_selfcheck.json \
-  --question-file official-docs/search-results/legal_question.txt \
+  --run ./runs/20261120-legal-01 \
+  --config scripts/trace_report.config.json \
+  report_input.json \
   --output "劳动合同法第四十七条经济补偿标准.html"
 
 python3 scripts/deliver_outputs.py <HTML 绝对路径>

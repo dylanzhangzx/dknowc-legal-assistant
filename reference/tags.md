@@ -38,7 +38,7 @@
 python3 {baseDir}/scripts/tag_catalog.py --resolve 金融监管行业
 
 # 校验一次检索结果里的所有 文件标签
-python3 {baseDir}/scripts/tag_catalog.py --check official-docs/search-results/legal_q1.json
+python3 {baseDir}/scripts/tag_catalog.py --check <run>/legal_q1.json
 
 # 列出某一类的全部路径
 python3 {baseDir}/scripts/tag_catalog.py --type "【DT】行业标签"

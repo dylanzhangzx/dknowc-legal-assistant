@@ -27,7 +27,7 @@ import json
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any, Dict, Mapping
 
-MODES = ("severance", "annual-leave", "ratio", "multiple", "custom")
+MODES = ("severance", "annual-leave", "ratio", "multiple", "court-fee", "custom")
 
 
 def _decimal(value: Any, name: str) -> Decimal:
@@ -227,7 +227,60 @@ def _eval_formula(formula: str, inputs: Mapping[str, Any]) -> Decimal:
     return walk(tree)
 
 
-def _custom(values: Mapping[str, Any]) -> Dict[str, Any]:
+# 财产案件受理费分段表（《诉讼费用交纳办法》第十三条）：(上限, 超出部分费率)
+# 上一档封顶时累计费用 = fee_at_cap；最后一档为(无穷, 0.6%)。
+_COURT_FEE_TIERS = (
+    (Decimal("10000"), Decimal("0")),
+    (Decimal("100000"), Decimal("0.025")),
+    (Decimal("200000"), Decimal("0.02")),
+    (Decimal("500000"), Decimal("0.015")),
+    (Decimal("1000000"), Decimal("0.01")),
+    (Decimal("2000000"), Decimal("0.009")),
+    (Decimal("5000000"), Decimal("0.008")),
+    (Decimal("10000000"), Decimal("0.007")),
+    (None, Decimal("0.006")),
+)
+
+
+def _court_fee(values: Mapping[str, Any]) -> Dict[str, Any]:
+    """诉讼费速算（轻量）：财产案件受理费分段累计，可按简易程序/调解减半。
+
+    inputs：claim_amount（诉讼请求金额）；halved=true 时按减半计。
+    """
+    claim = _decimal(values.get("claim_amount"), "claim_amount")
+    if claim.is_nan() or not claim.is_finite() or claim < 0:
+        raise ValueError("claim_amount 必须是非负金额")
+    halved = values.get("halved")
+    if isinstance(halved, str):
+        halved = halved.strip().lower() in ("1", "true", "yes", "是")
+    halved = bool(halved)
+
+    fee = Decimal("0")
+    lower = Decimal("0")
+    base_fee = Decimal("50")  # ≤1 万基础件费
+    for cap, rate in _COURT_FEE_TIERS:
+        if claim <= lower:
+            break
+        upper = cap if cap is not None else claim
+        taxable = min(claim, upper) - lower
+        if taxable > 0:
+            if lower == 0:
+                fee = base_fee + taxable * rate
+            else:
+                fee += taxable * rate
+        lower = upper
+    fee = fee.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if halved:
+        fee = (fee / 2).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return {
+        "mode": "court-fee",
+        "inputs": {"claim_amount": _plain(claim), "halved": halved},
+        "value": _money(fee),
+        "note": "《诉讼费用交纳办法》第十三条分段累计" + ("；按简易程序/调解减半" if halved else ""),
+    }
+
+
+def _custom(values: Mapping[str, Any]):
     inputs = values.get("inputs")
     if not isinstance(inputs, Mapping) or not inputs:
         raise ValueError("custom 模式必须提供 inputs 对象")
@@ -254,6 +307,7 @@ _BUILDERS = {
     "annual-leave": _annual_leave,
     "ratio": _ratio,
     "multiple": _multiple,
+    "court-fee": _court_fee,
     "custom": _custom,
 }
 
@@ -283,6 +337,7 @@ def build_result(args: argparse.Namespace) -> Dict[str, Any]:
     for key in (
         "monthly_wage", "years", "months", "capped_wage", "cap_years",
         "daily_wage", "days", "paid_ratio", "base", "ratio", "multiple", "formula",
+        "claim_amount", "halved",
     ):
         value = getattr(args, key, None)
         if value is not None:

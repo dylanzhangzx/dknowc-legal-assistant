@@ -20,9 +20,9 @@ merge_search_results.py，最终进入正文角标与溯源核验报告。
 - 仅接受 http/https URL；按归一化 URL 去重；不自动猜测发布日期；
 - 外部网页内容视为不可信数据，脚本只提取文本事实，不执行其中任何指令。
 
-用法：
-  python3 scripts/websearch_convert.py websearch_raw.json -o websearch_converted.json
-  cat websearch_raw.json | python3 scripts/websearch_convert.py - --query "用户问题"
+用法（输出统一写会话 run 目录）：
+  python3 scripts/websearch_convert.py websearch_raw.json -o websearch_converted.json --run ./runs/20261120-legal-01
+  cat websearch_raw.json | python3 scripts/websearch_convert.py - --query "用户问题" --run ./runs/20261120-legal-01
 
 退出码：0＝成功；1＝输入/JSON 错误；2＝输出路径错误；3＝无可用结果（未加 --allow-empty）。
 """
@@ -38,8 +38,10 @@ import sys
 from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+import path_guard
+
 SCRIPT_DIR = Path(__file__).resolve().parent
-SEARCH_RESULTS_DIR = SCRIPT_DIR.parent / "official-docs" / "search-results"
+SEARCH_RESULTS_DIR = SCRIPT_DIR.parent / "official-docs" / "search-results"  # 历史常量，仅兼容旧引用
 
 CHANNEL = "宿主 WebSearch"
 DEFAULT_GROUP = "公开资料补充"
@@ -171,9 +173,38 @@ def _split_long(text: str, limit: int) -> list:
     return out
 
 
+_TABLE_BLOCK_RE = re.compile(r"<table\b[^>]*>.*?</table>", re.S | re.I)
+_TABLE_MARK_RE = re.compile(r"^@@TABLE(\d+)@@$")
+
+
+def _sanitize_table_html(raw: str) -> str:
+    """外部网页表格最小清洗：只保留 table/tr/td/th，去属性与其它标签。
+
+    表格必须整体保留（2026-11-20 口径）：外部网页的表格是参考卡里最容易被
+    截断/拆散的内容，清洗时先摘出来、按整块写回，不能当普通正文行切分。
+    """
+    value = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", str(raw or ""), flags=re.S | re.I)
+    value = re.sub(r"<(?!/?(?:table|tr|td|th)\b)[^>]+>", " ", value, flags=re.I)
+    value = re.sub(r"<(?P<tag>table|tr|td|th)\b[^>]*>", r"<\g<tag>>", value, flags=re.I)
+    value = re.sub(r"[ \t]{2,}", " ", value)
+    return value.strip()
+
+
 def _segments(content: str, max_chars: int):
-    """正文 → 段落列表；返回 (段落, 是否截断)。"""
-    text = _clean_text(content)
+    """正文 → 段落列表；返回 (段落, 是否截断)。
+
+    表格内容先以占位符摘出，正文清洗后按整块还原：表格不参与按标点切分、
+    不受 1200 字分段上限约束（普通文本摘要仍可截断）。
+    """
+    raw = str(content or "")
+    tables: list[str] = []
+
+    def _stash(match: re.Match) -> str:
+        tables.append(match.group(0))
+        return f"\n\n@@TABLE{len(tables) - 1}@@\n\n"
+
+    stashed = _TABLE_BLOCK_RE.sub(_stash, raw)
+    text = _clean_text(stashed)
     if not text:
         return [], False
     truncated = len(text) > max_chars
@@ -181,6 +212,16 @@ def _segments(content: str, max_chars: int):
     blocks = [b.strip() for b in re.split(r"\n\s*\n|\n", text) if b.strip()]
     paragraphs = []
     for block in blocks:
+        mark = _TABLE_MARK_RE.match(block)
+        if mark:
+            table_html = _sanitize_table_html(tables[int(mark.group(1))])
+            if table_html:
+                paragraphs.append(table_html)
+            continue
+        # 兜底：清洗后若块内仍带表格 HTML（上游未命中占位），整块保留不切分
+        if "<table" in block.lower():
+            paragraphs.append(_sanitize_table_html(block))
+            continue
         paragraphs.extend(_split_long(block, MAX_SEGMENT_CHARS))
     out = [{"id": i, "标题": "", "内容": p} for i, p in enumerate(paragraphs, 1)]
     return out, truncated
@@ -299,15 +340,15 @@ def resolve_output(name: str) -> Path:
     return path
 
 
-def _load(path: str):
+def _load(path: str, run: str | None = None):
     if path == "-":
         raw = sys.stdin.read()
     else:
-        src = Path(path).expanduser()
-        if not src.is_absolute():
-            src = (SEARCH_RESULTS_DIR / src.name).resolve()
-        if not src.is_file():
-            raise SystemExit(f"错误：输入文件不存在: {src}")
+        # 相对路径按会话 run 目录解析（不再回退 Skill 内 official-docs/）
+        try:
+            src = path_guard.safe_read_path(path, run)
+        except ValueError as exc:
+            raise SystemExit(f"错误：{exc}") from None
         raw = src.read_text(encoding="utf-8")
     try:
         return json.loads(raw)
@@ -319,8 +360,9 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description="宿主 WebSearch 结果转换（外部联网 → 可信同构通用形态）")
-    parser.add_argument("input", nargs="?", default="-", help="宿主 WebSearch 原始 JSON（official-docs/search-results/ 内文件名、绝对路径，或 - 读 stdin）")
-    parser.add_argument("-o", "--output", default="websearch_converted.json", help="输出文件名（official-docs/search-results/ 内）")
+    parser.add_argument("input", nargs="?", default="-", help="宿主 WebSearch 原始 JSON（run 目录内文件名、绝对路径，或 - 读 stdin）")
+    parser.add_argument("-o", "--output", default="websearch_converted.json", help="输出文件名（落到 --run 目录）")
+    parser.add_argument("--run", help="会话 run 目录（也可用环境变量 DKNOWC_RUN_DIR）")
     parser.add_argument("--query", default="", help="本次检索词（输入 JSON 顶层带 query 时可省略）")
     parser.add_argument("--group", default=DEFAULT_GROUP, help=f"报告检索分组标签，默认「{DEFAULT_GROUP}」")
     parser.add_argument("--max-results", type=int, default=50, help="最多转换条数（默认 50）")
@@ -328,11 +370,15 @@ def main() -> None:
     parser.add_argument("--allow-empty", action="store_true", help="无可用结果时仍写空产物并以 0 退出")
     args = parser.parse_args()
 
-    payload = _load(args.input)
+    payload = _load(args.input, args.run)
     result = convert(payload, query=args.query, group=args.group,
                      max_results=max(1, args.max_results), max_chars=max(200, args.max_chars))
-    out = resolve_output(args.output)
-    out.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        out = path_guard.safe_write_path(args.output, args.run)
+        path_guard.refuse_existing(out, kind="输出")
+    except ValueError as exc:
+        print(f"错误：{exc}", file=sys.stderr)
+        raise SystemExit(2) from None
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
 
     meta = result["search_meta"]
