@@ -208,6 +208,7 @@ def main() -> int:
         parser.error(str(exc))
     out.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(out), "profile": profile}, ensure_ascii=False, indent=2))
+    print("[GATE-PASS] question_profile 问题画像已生成", file=sys.stderr)
     return 0
 
 

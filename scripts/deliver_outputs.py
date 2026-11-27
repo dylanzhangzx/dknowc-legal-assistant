@@ -482,6 +482,7 @@ def main() -> int:
             "doubao_chat_active": str(chat) if chat else None,
             "doubao_chat_candidates": chat_candidates,
         }, ensure_ascii=False, indent=2))
+        print("[GATE-PASS] deliver_outputs 探测完成", file=sys.stderr)
         return 0
 
     # 交付源定位口径（1.0.3）：报告在会话 run 目录内生成，交付源也只认 run 目录。
@@ -581,6 +582,8 @@ def main() -> int:
     }
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     ok = bool(results) and all(r.get("copied") for r in results)
+    if ok:
+        print("[GATE-PASS] deliver_outputs 交付完成", file=sys.stderr)
     return 0 if ok else 1
 
 

@@ -433,7 +433,10 @@ def main() -> int:
         parser.error(str(exc))
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, ensure_ascii=False, indent=2))
-    return 0 if result["verdict"] == "pass" else 1
+    if result["verdict"] == "pass":
+        print("[GATE-PASS] verify_claims 结论台账校验通过", file=sys.stderr)
+        return 0
+    return 1
 
 
 if __name__ == "__main__":

@@ -1,6 +1,21 @@
 # 变更记录
 
-## v1.0.4（2026-11-25，本地开发版本）
+## v1.0.5（2026-11-25 开发，2026-11-27 提审；同日按审核条件整改送复审）
+
+### 审核条件整改（2026-11-27，skill审核「有条件通过」两项条件）
+
+- **条件1**：送审申报"内核零改动"与实测不符——`render_trace_html.py` 曾为加 GATE 标记 +1 行，破坏与上游 dk-trace-report 1.0.2 的逐字节一致。整改：移除该行，render 成功出口维持「已生成：<文件>」（本身即非零输出），SKILL 判据补充说明 render 的成功形态；其余 4 个内核文件本来就未动。
+- **条件2**：内部台账编号随包（SKILL 标题与 initialize 注释）。整改：包内文案全部去掉该编号（CHANGE_log 与 tests 不入包，保留编号便于追溯）。
+- 记录级项同步：SKILL 内脚本清单去掉仓库侧 check_release（不入包）、补充"标记只证明执行成功，就绪看 ready 字段"、CHANGE_log 状态行更新为已提审。
+
+### 跨平台闸门标记（DW-0115 第三条，对齐公文写作 3.9.11）
+
+- **问题**：Windows 上 `python3` 是微软商店占位符，零输出零报错拿不到退出码；verify_claims（verdict 必须 pass）与 check_answer（退出码必须 0）成功路径全安静，"根本没执行"和"核验通过"输出一模一样，两轨门禁在 Windows 下整体失效，Agent 会直接渲染并交付未核验报告。
+- **SKILL.md 新增「命令约定（跨平台）」节**：Windows 改用 `python`/`py`；闸门判据 = 退出码 0 且输出（stdout/stderr 合并）含 `[GATE-PASS]`；本节覆盖全部 reference 文档命令。step1 初始化与 step7 强制闸门措辞同步。
+- **13 个工作流脚本成功出口加 `[GATE-PASS]` 标记**（打 stderr，不破坏 JSON stdout 消费）：initialize、legal_search、question_profile、source_cards、merge_search_results、websearch_convert、calc_period、calc_legal、verify_claims、check_answer、render_trace_html、deliver_outputs（probe 与交付两个成功出口）、check_release；失败路径维持 stderr + 非 0 退出码不变。不全局改写 python3（macOS/Linux 无 python 别名），不加解释器探测脚本。
+- **状态**：2026-11-27 已提审（skill审核：有条件通过，2 条件已整改送复审）；未封版、未发布、未合并资产库 main。
+
+## v1.0.4（2026-11-25，已封版发布）
 
 ### 内核单源化 + 两轨自验收（对齐上游「溯源核验报告生成器」1.0.2，Dylan 决策）
 

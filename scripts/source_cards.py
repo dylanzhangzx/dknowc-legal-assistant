@@ -15,6 +15,7 @@
 """
 
 from __future__ import annotations
+import sys
 
 import argparse
 import json
@@ -314,6 +315,7 @@ def main() -> int:
     result = build_cards(payload, question_jurisdiction, as_of)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps({"output": str(out), "sources": len(result["sources"])}, ensure_ascii=False, indent=2))
+    print("[GATE-PASS] source_cards 材料画像已生成", file=sys.stderr)
     return 0
 
 

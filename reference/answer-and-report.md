@@ -176,7 +176,7 @@ python3 {baseDir}/scripts/check_answer.py \
   ```json
   "absolute_review": {"36": "本案工龄确实全部在 2008 年后，属事实描述"}
   ```
-- 不要写成 `... | tail -30; echo $?`——那样拿到的是 `tail` 的退出码。直接运行，退出码非 0 不得生成报告
+- 不要写成 `... | tail -30; echo $?`——那样拿到的是 `tail` 的退出码。直接运行；判据是**退出码 0 且输出含 `[GATE-PASS]`**（Windows 下 `python3` 是占位符、零输出，改用 `python`/`py`），任一不满足不得生成报告
 - 复杂题/含外部材料/含数量金额日期或分类判断的题，再按 `{baseDir}/reference/verification-pass.md` 跑独立复核，落盘 `legal_verify.json`；`verdict` 非 `pass` 不得生成最终报告
 
 ## 六、生成报告

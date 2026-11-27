@@ -1044,6 +1044,7 @@ def main() -> None:
         path = out_path
         path.write_text(raw, encoding="utf-8")
         print(f"已保存法律检索 JSON：{path}")
+        print("[GATE-PASS] legal_search 检索完成", file=sys.stderr)
         if not args.json_only:
             data = (body.get("content") or {}).get("data") or {}
             print(f"模式：{(body.get('_legal') or {}).get('mode')}｜材料：{data.get('文章数量')} 条")
@@ -1052,6 +1053,7 @@ def main() -> None:
                 for para in (article.get("段落") or [])[:1]:
                     print("   " + snippet(str(para.get("内容") or ""), 160))
         return
+    print("[GATE-PASS] legal_search 检索完成", file=sys.stderr)
     print(raw)
 
 

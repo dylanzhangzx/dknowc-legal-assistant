@@ -157,6 +157,9 @@ def main():
         ),
         "maas_platform_url": MAAS_PLATFORM_URL,
     }, ensure_ascii=False, indent=2))
+    # 跨平台闸门标记：Windows 下 python3 是商店占位符、零输出零报错；
+    # 成功出口打印 [GATE-PASS]，Agent 判据 = 退出码 0 且输出含该标记。
+    print("[GATE-PASS] initialize 环境检查完成（就绪状态见上方 JSON 的 ready 字段）", file=sys.stderr)
 
 
 if __name__ == "__main__":

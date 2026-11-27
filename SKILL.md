@@ -7,7 +7,7 @@ description: "当用户需要查法律条文、做法律问答、核对法条原
 description_zh: "深知法律助手，面向遇到法律问题要弄明白、要把依据找扎实的人——劳动、合同、借贷、消费、公司股权、婚姻继承等日常纠纷中的个人，以及企业法务、HR、合规与业务人员。它不凭记忆答法条，而是把“这事适用哪部法、哪一条、现在是不是这个版本、金额怎么算”一路查到原文。\n\n能查：法律、行政法规、司法解释、部门规章与地方性法规的条文原文；既支持按条号精确取条文，也能按事实描述做条款级语义召回；涉及新旧法衔接时，按行为发生日或基准日选择当时有效的版本，并把版本差异说清楚。\n\n能算：经济补偿、未休年假、借款利息上限、赔偿金、诉讼时效等高频计算，逐项列公式、口径与假设，不把“大概”当结论；也能对合同条款、公司制度和合规依据做条文核对。\n\n能核：每个结论挂载条文原文与来源角标，点开可回看；交付前做事实有据、角标绑定、答案一致、时效确认、无未核验断言五项自检，并单独生成一份可逐条核对的溯源核验报告。\n\n交付：直接回答 + 一份含“正文、溯源核验报告、知识专库”三页的单文件 HTML，可导出 Markdown 与 PDF。当前覆盖中国大陆法律，港澳台及外国法不在范围；输出为研究性分析，不构成正式法律意见。\n\n由北京彩智科技有限公司旗下“深知可信智能”提供。"
 description_en: "dknowc legal assistant is a legal retrieval and verification Skill provided by dknowc Trusted Intelligence under Beijing Caizhi Technology Co., Ltd. It retrieves provision-level text through the trusted search API V2, falls back to full-text retrieval when version accuracy is required, and delivers a direct answer plus a single-file HTML provenance verification report. Hong Kong, Macao, Taiwan and foreign law are out of scope."
 category: "legal"
-version: "1.0.4"
+version: "1.0.5"
 author: 彩智科技
 permissions:
   network:
@@ -69,10 +69,15 @@ python3 {baseDir}/scripts/initialize.py
 
 只有 `ready=true`、`api_key_configured=true`、`api_key_source` 为 `environment` 或 `keyfile` 时才可检索。初始化默认做一次轻量检索校验（`policies/filter`，最多等 8 秒）；Key 返回 401/403 时阻断并引导重新开通；网络超时/5xx 时降级放行，但 `key_validated=false` 且提示“首次检索可能失败”。离线或只需快速检查时可加 `--no-verify-key`。未配置 Key 或校验失败时按 `{baseDir}/reference/onboarding_scripts.md` 引导开通；未开通前不得输出任何“已查到/已核实”的法律结论。
 
+## 命令约定（跨平台）
+
+- **Windows 下 `python3` 不可用**（是微软商店占位符：零输出、零报错、拿不到退出码）：Windows/Git Bash 环境改用 `python` 或 `py`；macOS/Linux 维持 `python3`。本节覆盖全部 reference 文档里的命令写法。
+- **闸门判据 = 退出码 0 且输出（stdout/stderr 合并）含 `[GATE-PASS]`**：零输出、报错、或没有 `[GATE-PASS]` 一律不得当作通过，视为“脚本根本没执行”，回到本节排查解释器。包内全部工作流脚本（initialize / legal_search / question_profile / source_cards / merge_search_results / websearch_convert / calc_period / calc_legal / verify_claims / check_answer / deliver_outputs）成功出口都会打印该标记，失败路径走 stderr + 非 0 退出码；`render_trace_html.py` 的成功出口是「已生成：<文件>」输出，判据同为退出码 0 且有成功输出。标记只证明脚本执行成功，Key 是否就绪以 initialize 输出 JSON 的 `ready` 字段为准。
+
 ## 核心工作流
 
 0. **定 run 目录（第一步）**：本次任务开始先确定**会话工作区**里的独立 run 目录（如 `./runs/20261120-<任务>`），后面所有检索 JSON、画像、台账、校验记录、报告都写这里——每个写文件的脚本都传 `--run <目录>`（或统一设环境变量 `DKNOWC_RUN_DIR`）。**禁止写 Skill 安装目录；`official-docs/` 不再用于运行产物**（脚本会直接拒绝）。
-1. **初始化**：运行 `initialize.py`，确认 Key 就绪。
+1. **初始化**：运行 `initialize.py`，确认输出退出码 0 且含 `[GATE-PASS]`，并读 JSON 的 `ready` 字段确认 Key 就绪。
 2. **读检索说明**：读 `{baseDir}/reference/retrieval-v2.md`（需要版本/兜底时再读 `{baseDir}/reference/retrieval-statute.md`）。
 3. **拆解（含案卷材料与争议焦点）**：把事实拆成法律问题清单，每项挂候选法条（条号只是假设，不是结论）。
    - **案卷材料**（用户提供了案情/合同/聊天记录等材料时）：先从案卷提取事实清单（时间线、当事人、金额、行为），写进问题画像的 `entities`/`facts`；案卷事实作为分析基础，**但不作为法律依据材料**——结论依据仍只能来自深知检索材料或标“按案卷自述/按通常口径”。复杂案卷题答案开头先给**「材料清单与缺口」**：列出本案已纳入的材料（案卷/检索各几件）与缺失的关键材料（如无考勤记录、无书面合同），缺失项进要件对照表的“缺口”列。
@@ -83,7 +88,7 @@ python3 {baseDir}/scripts/initialize.py
 5. **材料画像**：合并后运行 `scripts/source_cards.py` 生成 `legal_source_cards.json`；`fetch_status=failed` 的材料不能当依据，外省材料不能回答本省问题。
 5.5 **整理研究资料**：在 `<run>/legal_research_notes.md` 写核心事实表（结论｜法律/条号｜版本｜材料编号），把 0 条、标签异常、版本异常、接口失败一并记录。
 6. **先写结论台账，再写答案**：按 `{baseDir}/reference/answer-and-report.md` 先落盘 `legal_claims.json`，每个结论标 `direct / calculation / negative / inference / external / interpretation`，并挂 `source_ids`、`jurisdiction`、`as_of`；日期/利息先跑 `scripts/calc_period.py`，纯算术（经济补偿年限折算、年假 300%、比例/倍数、封顶）先跑 `scripts/calc_legal.py`。答案只能从台账里写，边写边标 `[n]`。
-7. **结论图校验 + AI 验收（结构化自检）+ 措辞检查**：先运行 `scripts/verify_claims.py --claims ... --sources ... --profile ... --answer ...`；`verdict` 非 `pass` 不得继续。再把 `fact_basis / binding / consistency / freshness / no_gap` 按**结构化契约**写入 `legal_selfcheck.json`——每项 `{"verdict": "pass|fail|pending", "basis": "怎么判的", "evidence": ["[n] 第X条 / 〔20xx〕文号 / 日期 / 文件名"]}`（旧字符串写法兼容，但**声明"通过"必须带可回查证据**：材料编号、条款号、文号、日期、标准号任一；没有就按 evidence_missing 拦截）。然后运行 `scripts/check_answer.py --answer <答案文件> --claims ... --materials ... --selfcheck ...`（`--answer` 必填，缺了会直接报参数错误）。台账类问题不能靠 `absolute_review` 放行。
+7. **结论图校验 + AI 验收（结构化自检）+ 措辞检查**：先运行 `scripts/verify_claims.py --claims ... --sources ... --profile ... --answer ...`；`verify_claims` 必须退出码 0 且输出含 `[GATE-PASS]`、`verdict` 为 `pass` 才可继续。再把 `fact_basis / binding / consistency / freshness / no_gap` 按**结构化契约**写入 `legal_selfcheck.json`——每项 `{"verdict": "pass|fail|pending", "basis": "怎么判的", "evidence": ["[n] 第X条 / 〔20xx〕文号 / 日期 / 文件名"]}`（旧字符串写法兼容，但**声明"通过"必须带可回查证据**：材料编号、条款号、文号、日期、标准号任一；没有就按 evidence_missing 拦截）。然后运行 `scripts/check_answer.py --answer <答案文件> --claims ... --materials ... --selfcheck ...`（`--answer` 必填，缺了会直接报参数错误）。台账类问题不能靠 `absolute_review` 放行。
 7.5 **独立复核**：复杂题/含外部材料/含数量金额日期或分类判断的题，按 `{baseDir}/reference/verification-pass.md` 逐条核对 claim 与材料；独立复核不过，同样不得生成最终报告。
 8. **生成报告并交付**：先用 `build_report_input.py --run <目录> legal_merged.json --adapter merged --answer-file legal_answer.txt --question "<问题全文>" --self-check-file legal_selfcheck.json --verify-file legal_verify.json --output report_input.json` 把检索/合并产物转成通用 JSON（渲染器只认通用 JSON），再 `render_trace_html.py --run <目录> --config {baseDir}/scripts/trace_report.config.json report_input.json --research-notes-file legal_research_notes.md --output "标题.html"` 生成 HTML；任一轨核验不过会直接拒绝出报告，修正后重跑。最后 `deliver_outputs.py --run <目录> <HTML 绝对路径>` 交付到宿主工作区。`outputs/` 只放这份 HTML；不复制 `answer.md`/中间 Markdown，不把 .md 当交付物。
 

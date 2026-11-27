@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """阻止 API Key、真实配置和本地生成物进入 SkillHub 公开包。"""
 
+import sys
 import re
 from pathlib import Path
 
@@ -108,6 +109,7 @@ def main():
         print("\n".join(findings))
         raise SystemExit(1)
     print("发布检查通过：未发现真实配置、API Key 或本地生成物")
+    print("[GATE-PASS] check_release 发布检查通过", file=sys.stderr)
 
 
 if __name__ == "__main__":

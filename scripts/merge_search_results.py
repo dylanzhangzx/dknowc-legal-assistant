@@ -619,6 +619,7 @@ def main() -> None:
     if amounts:
         print("  涉及金额样例：" + "、".join(amounts[:15]))
     print(f"  标题清单（{len(merged)} 篇；含首段摘要，便于识别标题看不出的主题）：")
+    print("[GATE-PASS] merge_search_results 合并完成", file=sys.stderr)
     for t in pool_summary["titles"]:
         line = f"    {t['编号']:>3}. {t['标题']}｜{t['机构']}｜{t['日期']}"
         if t.get("摘要"):

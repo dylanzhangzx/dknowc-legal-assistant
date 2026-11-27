@@ -34,6 +34,7 @@
 """
 
 from __future__ import annotations
+import sys
 
 import argparse
 import json
@@ -148,6 +149,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    print("[GATE-PASS] calc_period 计算完成", file=sys.stderr)
     return 0
 
 

@@ -20,6 +20,7 @@
 """
 
 from __future__ import annotations
+import sys
 
 import argparse
 import ast
@@ -368,6 +369,7 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
     print(json.dumps(result, ensure_ascii=False, indent=2))
+    print(f"[GATE-PASS] calc_legal 计算完成（mode={result.get('mode')}）", file=sys.stderr)
     return 0
 
 

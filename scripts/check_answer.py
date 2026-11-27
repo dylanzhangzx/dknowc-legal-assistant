@@ -616,6 +616,7 @@ def main() -> int:
     privacy_keys = {id(item) for item in privacy_findings}
     if not findings and not claim_issues:
         print("措辞检查通过：未发现无条件法律后果、未注明的事实假设或越界的结论措辞")
+        print("[GATE-PASS] check_answer 措辞与台账检查通过", file=sys.stderr)
         return 0
 
     review, review_loaded = (None, False)
@@ -657,6 +658,7 @@ def main() -> int:
         return 1
 
     print("\n以上表述已在 absolute_review 中逐条说明，可继续生成报告")
+    print("[GATE-PASS] check_answer 措辞与台账检查通过", file=sys.stderr)
     return 0
 
 

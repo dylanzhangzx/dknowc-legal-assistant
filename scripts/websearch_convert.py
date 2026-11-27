@@ -383,6 +383,7 @@ def main() -> None:
 
     meta = result["search_meta"]
     print(f"已转换：{out}")
+    print("[GATE-PASS] websearch_convert 外部材料转换完成", file=sys.stderr)
     print(
         f"输入候选 {meta['input_candidates']} 条 · 输出文章 {meta['articles']} 篇 · "
         f"丢弃无摘录 {meta['dropped_no_excerpt']} 条 · 截断 {meta['truncated_articles']} 篇"
